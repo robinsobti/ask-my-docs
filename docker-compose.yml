@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+  weaviate:
+    image: semitechnologies/weaviate:latest
+    container_name: weaviate-local
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # HTTP API
+      - "6060:6060"   # Prometheus metrics (optional)
+    environment:
+      # v0/v1: we'll do client-side embeddings, so keep vectorizer off
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      DEFAULT_VECTORIZER_MODULE: "none"
+      PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
+      QUERY_DEFAULTS_LIMIT: "25"
+      CLUSTER_HOSTNAME: "node1"
+    volumes:
+      - ./weaviate_data:/var/lib/weaviate
