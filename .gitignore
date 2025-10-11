@@ -1,6 +1,9 @@
 # macOS
 .DS_Store
 
+# weaviate
+weaviate_data/
+
 # Python
 __pycache__/
 *.pyc

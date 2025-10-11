@@ -13,7 +13,7 @@ def create_collection_if_missing() -> collection:
     client = get_client()
     try:
         list_of_collections = [c for c in client.collections.list_all()]
-        if(COLLECTION_NAME not in list_of_collections):
+        if COLLECTION_NAME not in list_of_collections:
             props = [
                     Property(name=p["name"], data_type=DataType.TEXT, description=p.get("description"))
                     for p in DOCS_SCHEMA["properties"]
@@ -25,8 +25,8 @@ def create_collection_if_missing() -> collection:
                     vectorizer_config=Configure.Vectorizer.none(),
                     inverted_index_config=Configure.inverted_index()
                 )
-            coll = client.collections.get(COLLECTION_NAME)
-            return coll
+        coll = client.collections.get(COLLECTION_NAME)
+        return coll
     except WeaviateBaseError as wbe:
         raise RuntimeError(f'Error creating collection: {wbe}') from wbe
     
