@@ -1,0 +1,9 @@
+[
+    {
+        "title": "Warranty Policy",
+        "source": "data/samples/warranty.txt",
+        "text": "Our warranty covers defects in materials and workmanship for one year from the date of purchase.",
+        "doc_id": "warranty",
+        "chunk_id": "warranty#0",
+    }
+]

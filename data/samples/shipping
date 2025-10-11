@@ -1,0 +1,9 @@
+[
+    {
+        "title": "Shipping",
+        "source": "data/samples/shipping.txt",
+        "text": "We offer standard and express shipping options. Tracking numbers are provided for all shipments.",
+        "doc_id": "shipping",
+        "chunk_id": "shipping#0",
+    }
+]

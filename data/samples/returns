@@ -1,0 +1,9 @@
+[
+    {
+        "title": "Returns & Refunds",
+        "source": "data/samples/returns.txt",
+        "text": "You may return items within 30 days for a full refund. Items must be unused and in original packaging.",
+        "doc_id": "returns",
+        "chunk_id": "returns#0",
+    }
+}
