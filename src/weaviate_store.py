@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any, Dict, List, TYPE_CHECKING
+from collections.abc import Mapping, Sequence
+from typing import Any, Dict, List, TYPE_CHECKING, Optional
 
 import weaviate
 from weaviate.classes.config import Configure, DataType, Property
@@ -16,10 +16,23 @@ if TYPE_CHECKING:  # pragma: no cover - type checking only
     from .chunking import Chunk
 
 
+_CLIENT: Optional[weaviate.WeaviateClient] = None
+
+
 def get_client() -> weaviate.WeaviateClient:
-    host = WEAVIATE_URL.replace("http://", "").replace("https://", "").split(":")[0]
-    port = int(WEAVIATE_URL.split(":")[-1])
-    return weaviate.connect_to_local(host=host, port=port)
+    global _CLIENT
+    if _CLIENT is None:
+        host = WEAVIATE_URL.replace("http://", "").replace("https://", "").split(":")[0]
+        port = int(WEAVIATE_URL.split(":")[-1])
+        _CLIENT = weaviate.connect_to_local(host=host, port=port)
+    return _CLIENT
+
+
+def close_client() -> None:
+    global _CLIENT
+    if _CLIENT is not None:
+        _CLIENT.close()
+        _CLIENT = None
 
 
 def create_collection_if_missing() -> collection:
@@ -121,7 +134,7 @@ def upsert_batch(objs: List[Dict[str, Any]]) -> int:
 
 def upsert_batch_with_vectors(
     collection_name: str,
-    chunks: List["Chunk"],
+    chunks: List[Dict[str, Any]],
     vectors: "NDArray[float] | Sequence[Sequence[float]]",
 ) -> int:
     """
@@ -140,25 +153,62 @@ def upsert_batch_with_vectors(
 
     count = 0
     for chunk, vector in zip(chunks, vector_rows):
-        metadata = chunk.metadata or {}
+        if isinstance(chunk, Mapping):
+            data = dict(chunk)
+        else:
+            data = vars(chunk)
+
+        metadata = data.get("metadata")
+        if not isinstance(metadata, Mapping):
+            metadata = {}
+
+        uid = (
+            data.get("id")
+            or data.get("chunk_id")
+            or metadata.get("id")
+            or metadata.get("chunk_id")
+            or ""
+        )
+        if not uid:
+            raise ValueError(f"Chunk missing 'id' or 'chunk_id': {chunk!r}")
+        uid = str(uid)
+
+        text = (
+            data.get("text")
+            or data.get("content")
+            or metadata.get("text")
+            or metadata.get("content")
+            or ""
+        )
+        title = data.get("title") or metadata.get("title") or ""
+        source = data.get("source") or metadata.get("source") or ""
+        doc_id = data.get("doc_id") or metadata.get("doc_id") or ""
+        chunk_id = data.get("chunk_id") or metadata.get("chunk_id") or uid
+
+        text = "" if text in (None, "") else str(text)
+        title = "" if title in (None, "") else str(title)
+        source = "" if source in (None, "") else str(source)
+        doc_id = "" if doc_id in (None, "") else str(doc_id)
+        chunk_id = str(chunk_id)
+
         try:
-            coll.data.delete_by_id(chunk.id)
+            coll.data.delete_by_id(uid)
         except Exception:
             pass
+
         coll.data.insert(
             properties={
-                "text": chunk.text,
-                "title": chunk.title,
-                "source": chunk.source,
-                "doc_id": chunk.doc_id,
-                "chunk_id": chunk.id,
+                "text": text,
+                "title": title,
+                "source": source,
+                "doc_id": doc_id,
+                "chunk_id": chunk_id,
             },
-            uuid=chunk.id,
+            uuid=uid,
             vector=vector,
         )
         count += 1
     return count
-
 
 def search_bm25(query: str, k: int = 5) -> List[Dict[str, Any]]:
     """

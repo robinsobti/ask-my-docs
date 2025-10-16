@@ -8,7 +8,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.weaviate_store import upsert_batch
+from src.weaviate_store import close_client, upsert_batch, upsert_batch_with_vectors
+from typing import Iterator, Dict
+from src.chunking import split_into_chunks
+from src.embedder import Embedder
+from src.config import COLLECTION_NAME
 
 SAMPLE_DOCS = [
     {
@@ -44,5 +48,40 @@ def main():
     n = upsert_batch(objs)
     print(f"Ingested {n} chunks.")
 
+def upsert_with_vectors() -> None:
+     """Load dir → chunk → embed (store vector in payload) → upsert."""
+     embedder = Embedder()
+     total = 0
+     for d in SAMPLE_DOCS:
+        doc = {
+            "doc_id": d["doc_id"],
+            "title": d["title"],
+            "source": d["source"],
+            "text": d["text"],
+        }
+        chunks = list(split_into_chunks(doc = doc))
+        if not chunks:
+            continue
+        texts = [chunk["content"] for chunk in chunks]
+        vectors = embedder.encode(texts)
+
+        objs = []
+        for c, vec in zip(chunks, vectors):
+            objs.append({
+                "id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"{c['doc_id']}::{c['chunk_id']}")),
+                "doc_id": c["doc_id"],
+                "chunk_id": c["chunk_id"],
+                "title": c["title"],
+                "source": c["source"],
+                "text": c["text"],
+            })
+
+        # Use the vector-aware upsert (expects collection, list of objs, and vectors)
+        n = upsert_batch_with_vectors(COLLECTION_NAME, objs, vectors)
+        total += n
+
 if __name__ == "__main__":
-    main()
+    try:
+        upsert_with_vectors()
+    finally:
+        close_client()
