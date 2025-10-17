@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import Any, Dict, List, TYPE_CHECKING, Optional
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any, Dict, List, Tuple, TYPE_CHECKING, Optional
+import uuid
 
+import numpy as np
 import weaviate
 from weaviate.classes.config import Configure, DataType, Property
 from weaviate.collections import collection
@@ -35,27 +37,73 @@ def close_client() -> None:
         _CLIENT = None
 
 
-def create_collection_if_missing() -> collection:
+def create_collection_if_missing(
+    name: str = COLLECTION_NAME,
+    properties: List[Tuple[str, str, str | None]] | None = None,
+    bm25_enabled: bool = True,
+    vector_dim: int | None = None,
+) -> collection:
     client = get_client()
+    target_name = name or COLLECTION_NAME
     try:
         existing_collections = list(client.collections.list_all())
-        if COLLECTION_NAME not in existing_collections:
-            props = [
-                Property(
-                    name=p["name"],
-                    data_type=DataType.TEXT,
-                    description=p.get("description"),
+        if target_name not in existing_collections:
+            if properties is None:
+                properties = [
+                    (
+                        prop["name"],
+                        prop.get("dataType", "text"),
+                        prop.get("description", ""),
+                    )
+                    for prop in DOCS_SCHEMA["properties"]
+                ]
+
+            props: List[Property] = []
+            for entry in properties:
+                if len(entry) == 2:
+                    prop_name, prop_type = entry
+                    prop_desc = ""
+                else:
+                    prop_name, prop_type, prop_desc = entry
+
+                dtype = (prop_type or "text").lower()
+                if dtype == "int":
+                    data_type = DataType.INT
+                elif dtype in {"number", "float"}:
+                    data_type = DataType.NUMBER
+                else:
+                    data_type = DataType.TEXT
+
+                props.append(
+                    Property(
+                        name=prop_name,
+                        data_type=data_type,
+                        description=prop_desc or None,
+                    )
                 )
-                for p in DOCS_SCHEMA["properties"]
-            ]
+            try:
+                inverted_conf = Configure.inverted_index(
+                    bm25=Configure.BM25(enabled=bm25_enabled)
+                )
+            except AttributeError:
+                inverted_conf = Configure.inverted_index()
+
+            if vector_dim is not None:
+                try:
+                    vector_index_conf = Configure.VectorIndex.hnsw(vector_size=vector_dim)
+                except TypeError:
+                    vector_index_conf = Configure.VectorIndex.hnsw()
+            else:
+                vector_index_conf = Configure.VectorIndex.hnsw()
             client.collections.create(
-                name=DOCS_SCHEMA["name"],
+                name=target_name,
                 description=DOCS_SCHEMA["description"],
                 properties=props,
                 vectorizer_config=Configure.Vectorizer.none(),
-                inverted_index_config=Configure.inverted_index(),
+                vector_index_config=vector_index_conf,
+                inverted_index_config=inverted_conf,
             )
-        return client.collections.get(COLLECTION_NAME)
+        return client.collections.get(target_name)
     except WeaviateBaseError as exc:
         raise RuntimeError(f"Error creating collection: {exc}") from exc
 
@@ -103,129 +151,154 @@ def _normalize_vectors(
     return normalized
 
 
-def upsert_batch(objs: List[Dict[str, Any]]) -> int:
-    """
-    Insert documents (BM25-only). If an ID exists, we overwrite it.
-    Each obj must include: id (uuid string), text, title, source, doc_id, chunk_id
-    """
-    coll = _resolve_collection(COLLECTION_NAME)
-    count = 0
-    for obj in objs:
-        for field in ("id", "text", "title", "source", "doc_id", "chunk_id"):
-            if field not in obj:
-                raise ValueError(f"Missing field '{field}' in object: {obj}")
-        try:
-            coll.data.delete_by_id(obj["id"])
-        except Exception:
-            pass
-        coll.data.insert(
-            properties={
-                "text": obj["text"],
-                "title": obj["title"],
-                "source": obj["source"],
-                "doc_id": obj["doc_id"],
-                "chunk_id": obj["chunk_id"],
-            },
-            uuid=obj["id"],
-        )
-        count += 1
-    return count
-
-
-def upsert_batch_with_vectors(
-    collection_name: str,
-    chunks: List[Dict[str, Any]],
-    vectors: "NDArray[float] | Sequence[Sequence[float]]",
+def upsert_batch(
+    objects: Iterable[Dict[str, Any]],
+    batch_size: int = 100,
+    collection_name: str = COLLECTION_NAME,
 ) -> int:
     """
-    Insert chunk objects into `collection_name` using explicit vectors.
-    The first vector written determines the collection's vector dimension: ensure it matches your embedder.
+    Insert or update chunk objects (properties + vectors) into the target collection.
+    Each object must include: id, text, title, source, doc_id, chunk_id, ord, vector.
     """
-    if len(chunks) != len(vectors):
-        raise ValueError(
-            f"Chunk count ({len(chunks)}) and vector count ({len(vectors)}) must match."
-        )
-    if not chunks:
-        return 0
-
-    vector_rows = _normalize_vectors(vectors)
     coll = _resolve_collection(collection_name)
 
-    count = 0
-    for chunk, vector in zip(chunks, vector_rows):
-        if isinstance(chunk, Mapping):
-            data = dict(chunk)
-        else:
-            data = vars(chunk)
+    def _normalize_object(obj: Dict[str, Any]) -> Tuple[str, Dict[str, Any], List[float]]:
+        missing = [
+            field
+            for field in ("id", "text", "title", "source", "doc_id", "chunk_id", "ord", "vector")
+            if field not in obj
+        ]
+        if missing:
+            raise ValueError(f"Missing required fields {missing} in object: {obj}")
 
-        metadata = data.get("metadata")
-        if not isinstance(metadata, Mapping):
-            metadata = {}
+        stable_id = str(obj["id"])
+        uid = str(uuid.uuid5(uuid.NAMESPACE_URL, stable_id))
+        vector = obj["vector"]
+        vector_row = _normalize_vectors([vector])[0]
 
-        uid = (
-            data.get("id")
-            or data.get("chunk_id")
-            or metadata.get("id")
-            or metadata.get("chunk_id")
-            or ""
+        properties = {
+            "stable_id": stable_id,
+            "text": str(obj["text"] or ""),
+            "title": str(obj.get("title") or ""),
+            "source": str(obj.get("source") or ""),
+            "doc_id": str(obj.get("doc_id") or ""),
+            "chunk_id": str(obj.get("chunk_id") or ""),
+            "ord": int(obj.get("ord", 0) or 0),
+        }
+        return uid, properties, vector_row
+
+    buffer: List[Tuple[str, Dict[str, Any], List[float]]] = []
+    total = 0
+
+    for raw_obj in objects:
+        uid, props, vector_row = _normalize_object(raw_obj)
+        buffer.append((uid, props, vector_row))
+
+        if len(buffer) >= batch_size:
+            for buid, bprops, bvector in buffer:
+                try:
+                    coll.data.delete_by_id(buid)
+                except Exception:
+                    pass
+                coll.data.insert(properties=bprops, uuid=buid, vector=bvector)
+                total += 1
+            buffer.clear()
+
+    if buffer:
+        for buid, bprops, bvector in buffer:
+            try:
+                coll.data.delete_by_id(buid)
+            except Exception:
+                pass
+            coll.data.insert(properties=bprops, uuid=buid, vector=bvector)
+            total += 1
+
+    return total
+
+def _format_objects(objects: Sequence[Any]) -> List[Dict[str, Any]]:
+    hits: List[Dict[str, Any]] = []
+    for obj in objects:
+        properties = getattr(obj, "properties", {}) or {}
+        metadata = getattr(obj, "metadata", None)
+        score = getattr(metadata, "score", None)
+        if score is None:
+            certainty = getattr(metadata, "certainty", None)
+            distance = getattr(metadata, "distance", None)
+            if certainty is not None:
+                score = float(certainty)
+            elif distance is not None:
+                try:
+                    score = max(0.0, 1.0 - float(distance))
+                except (TypeError, ValueError):
+                    score = None
+        stable_id = properties.get("stable_id")
+        if not stable_id:
+            doc_part = properties.get("doc_id", "")
+            chunk_part = properties.get("chunk_id", "")
+            if doc_part or chunk_part:
+                stable_id = f"{doc_part}::{chunk_part}".strip(":")
+            else:
+                stable_id = getattr(obj, "uuid", "")
+
+        hits.append(
+            {
+                "id": stable_id,
+                "score": float(score) if score is not None else 0.0,
+                "title": properties.get("title", ""),
+                "text": properties.get("text", ""),
+                "source": properties.get("source", ""),
+            }
         )
-        if not uid:
-            raise ValueError(f"Chunk missing 'id' or 'chunk_id': {chunk!r}")
-        uid = str(uid)
+    hits.sort(key=lambda item: item["score"], reverse=True)
+    return hits
 
-        text = (
-            data.get("text")
-            or data.get("content")
-            or metadata.get("text")
-            or metadata.get("content")
-            or ""
-        )
-        title = data.get("title") or metadata.get("title") or ""
-        source = data.get("source") or metadata.get("source") or ""
-        doc_id = data.get("doc_id") or metadata.get("doc_id") or ""
-        chunk_id = data.get("chunk_id") or metadata.get("chunk_id") or uid
 
-        text = "" if text in (None, "") else str(text)
-        title = "" if title in (None, "") else str(title)
-        source = "" if source in (None, "") else str(source)
-        doc_id = "" if doc_id in (None, "") else str(doc_id)
-        chunk_id = str(chunk_id)
-
-        try:
-            coll.data.delete_by_id(uid)
-        except Exception:
-            pass
-
-        coll.data.insert(
-            properties={
-                "text": text,
-                "title": title,
-                "source": source,
-                "doc_id": doc_id,
-                "chunk_id": chunk_id,
-            },
-            uuid=uid,
-            vector=vector,
-        )
-        count += 1
-    return count
-
-def search_bm25(query: str, k: int = 5) -> List[Dict[str, Any]]:
+def search_bm25(
+    query: str,
+    k: int = 5,
+    collection_name: str = COLLECTION_NAME,
+) -> List[Dict[str, Any]]:
     """
     BM25 keyword search (no vectors).
     Returns list of dicts with score, title, text, source, id.
     """
-    coll = _resolve_collection(COLLECTION_NAME)
+    coll = _resolve_collection(collection_name)
     res = coll.query.bm25(query=query, limit=k)
-    hits = []
-    for obj in res.objects:
-        hits.append(
-            {
-                "id": obj.uuid,
-                "score": obj.metadata.score,
-                "title": obj.properties.get("title", ""),
-                "text": obj.properties.get("text", ""),
-                "source": obj.properties.get("source", ""),
-            }
-        )
+    hits = _format_objects(getattr(res, "objects", []))
+
+    if not hits:
+        return hits
+
+    scores = [hit["score"] for hit in hits]
+    max_score = max(scores)
+    min_score = min(scores)
+    if max_score == min_score:
+        for hit in hits:
+            hit["score"] = 1.0
+        return hits
+
+    span = max_score - min_score
+    for hit in hits:
+        hit["score"] = max(0.0, (hit["score"] - min_score) / span)
+
+    hits.sort(key=lambda item: item["score"], reverse=True)
     return hits
+
+
+def search_vector(
+    q_vec: np.ndarray,
+    k: int = 5,
+    collection_name: str = COLLECTION_NAME,
+) -> List[Dict[str, Any]]:
+    """
+    Vector (semantic) search using a pre-computed query vector.
+    Returns normalized hits with score derived from vector distance.
+    """
+    if q_vec.ndim != 1:
+        raise ValueError("q_vec must be a 1-D numpy array.")
+    coll = _resolve_collection(collection_name)
+    res = coll.query.near_vector(
+        vector=q_vec.tolist(),
+        limit=k,
+    )
+    return _format_objects(getattr(res, "objects", []))

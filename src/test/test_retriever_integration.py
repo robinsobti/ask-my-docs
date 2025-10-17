@@ -19,7 +19,7 @@ class RetrieverIntegrationTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         try:
-            cls.collection = create_collection_if_missing()
+            cls.collection = create_collection_if_missing(vector_dim=1)
         except Exception as exc:  # pragma: no cover - depends on external service
             raise unittest.SkipTest(f"Weaviate not available: {exc}") from exc
 
@@ -34,6 +34,8 @@ class RetrieverIntegrationTestCase(unittest.TestCase):
             "source": "integration-test",
             "doc_id": doc_uuid,
             "chunk_id": chunk_uuid,
+            "ord": 0,
+            "vector": [0.0],
         }
 
         upsert_batch([document])

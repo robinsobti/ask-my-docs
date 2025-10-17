@@ -2,7 +2,6 @@ from typing import List, Iterator, Dict, Any
 from dataclasses import dataclass
 from pathlib import Path
 import os
-import re
 import uuid
 from PyPDF2 import PdfReader
 
@@ -24,7 +23,10 @@ class Chunk:
 def load_docs(path: str) -> List[Document]:
     """Walk a folder; read .txt/.md directly; extract text from .pdf (basic)."""
     documents: List[Document] = []
-    for root, _, files in os.walk(path):
+    root_path = Path(path).resolve()
+    existing_ids: set[str] = set()
+    for root, _, files in os.walk(root_path):
+        files.sort()
         for file in files:
             fpath = os.path.join(root, file)
             ext = Path(file).suffix.lower()
@@ -47,9 +49,15 @@ def load_docs(path: str) -> List[Document]:
                 # skip files we can't read
                 continue
 
-            doc_id = str(uuid.uuid5(uuid.NAMESPACE_URL, fpath))
+            base_id = Path(file).stem
+            doc_id = base_id
+            suffix = 1
+            while doc_id in existing_ids:
+                suffix += 1
+                doc_id = f"{base_id}_{suffix}"
             meta = {"source": fpath, "filename": file}
             documents.append(Document(id=doc_id, content=text, metadata=meta))
+            existing_ids.add(doc_id)
     return documents
 
 def load_files(paths: List[str]) -> Iterator[Dict[str, Any]]:
