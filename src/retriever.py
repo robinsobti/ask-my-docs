@@ -8,7 +8,12 @@ from typing import Dict, List, Literal, Optional, TYPE_CHECKING, cast
 
 import numpy as np
 
-from .config import COLLECTION_NAME
+from .config import (
+    COLLECTION_NAME,
+    DEFAULT_HYBRID_ALPHA,
+    DEFAULT_RETRIEVAL_MODE,
+    DEFAULT_RETRIEVAL_TOP_K,
+)
 from .weaviate_store import create_collection_if_missing, search_bm25, search_vector
 
 if TYPE_CHECKING:  # pragma: no cover - import for typing only
@@ -32,9 +37,9 @@ def _require_embedder(embedder: Optional["Embedder"], mode: Mode) -> "Embedder":
 
 def retrieve(
     query: str,
-    mode: Mode = "hybrid",
-    k: int = 5,
-    alpha: float = 0.5,
+    mode: str = DEFAULT_RETRIEVAL_MODE,
+    k: int = DEFAULT_RETRIEVAL_TOP_K,
+    alpha: float = DEFAULT_HYBRID_ALPHA,
     *,
     collection: str = COLLECTION_NAME,
     embedder: Optional["Embedder"] = None,
@@ -75,7 +80,7 @@ def retrieve(
 
 def retrieve_with_vector(
     q_vec: np.ndarray,
-    k: int,
+    k: int = DEFAULT_RETRIEVAL_TOP_K,
     *,
     collection: str = COLLECTION_NAME,
 ) -> List[Dict[str, object]]:
@@ -93,7 +98,7 @@ def retrieve_with_vector(
 def fuse_hybrid(
     bm25_hits: List[Dict[str, object]],
     vector_hits: List[Dict[str, object]],
-    alpha: float = 0.5,
+    alpha: float = DEFAULT_HYBRID_ALPHA,
 ) -> List[Dict[str, object]]:
     """
     Combine lexical and vector scores by weighted sum (score-level fusion).

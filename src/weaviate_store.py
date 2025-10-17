@@ -8,9 +8,14 @@ import numpy as np
 import weaviate
 from weaviate.classes.config import Configure, DataType, Property
 from weaviate.collections import collection
-from weaviate.exceptions import WeaviateBaseError
+from weaviate.exceptions import UnexpectedStatusCodeError, WeaviateBaseError
 
-from .config import COLLECTION_NAME, DOCS_SCHEMA, WEAVIATE_URL
+from .config import (
+    COLLECTION_NAME,
+    DEFAULT_UPSERT_BATCH_SIZE,
+    DOCS_SCHEMA,
+    WEAVIATE_URL,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only
     from numpy.typing import NDArray
@@ -46,8 +51,8 @@ def create_collection_if_missing(
     client = get_client()
     target_name = name or COLLECTION_NAME
     try:
-        existing_collections = list(client.collections.list_all())
-        if target_name not in existing_collections:
+        coll = client.collections.get(target_name)
+        if not coll.exists():
             if properties is None:
                 properties = [
                     (
@@ -81,29 +86,21 @@ def create_collection_if_missing(
                         description=prop_desc or None,
                     )
                 )
-            try:
-                inverted_conf = Configure.inverted_index(
-                    bm25=Configure.BM25(enabled=bm25_enabled)
-                )
-            except AttributeError:
-                inverted_conf = Configure.inverted_index()
-
-            if vector_dim is not None:
-                try:
-                    vector_index_conf = Configure.VectorIndex.hnsw(vector_size=vector_dim)
-                except TypeError:
-                    vector_index_conf = Configure.VectorIndex.hnsw()
-            else:
-                vector_index_conf = Configure.VectorIndex.hnsw()
+            inverted_conf = Configure.inverted_index()
+            vector_index_conf = Configure.VectorIndex.hnsw()
+            vector_config = Configure.Vectors.self_provided(
+                name="default",
+                vector_index_config=vector_index_conf,
+            )
             client.collections.create(
                 name=target_name,
                 description=DOCS_SCHEMA["description"],
                 properties=props,
-                vectorizer_config=Configure.Vectorizer.none(),
-                vector_index_config=vector_index_conf,
+                vector_config=vector_config,
                 inverted_index_config=inverted_conf,
             )
-        return client.collections.get(target_name)
+            coll = client.collections.get(target_name)
+        return coll
     except WeaviateBaseError as exc:
         raise RuntimeError(f"Error creating collection: {exc}") from exc
 
@@ -153,16 +150,17 @@ def _normalize_vectors(
 
 def upsert_batch(
     objects: Iterable[Dict[str, Any]],
-    batch_size: int = 100,
+    batch_size: int = DEFAULT_UPSERT_BATCH_SIZE,
     collection_name: str = COLLECTION_NAME,
 ) -> int:
     """
     Insert or update chunk objects (properties + vectors) into the target collection.
     Each object must include: id, text, title, source, doc_id, chunk_id, ord, vector.
+    `batch_size` is retained for API compatibility but is ignored in the v2 ingestion flow.
     """
     coll = _resolve_collection(collection_name)
 
-    def _normalize_object(obj: Dict[str, Any]) -> Tuple[str, Dict[str, Any], List[float]]:
+    def _normalize_object(obj: Dict[str, Any]) -> Tuple[uuid.UUID, Dict[str, Any], List[float]]:
         missing = [
             field
             for field in ("id", "text", "title", "source", "doc_id", "chunk_id", "ord", "vector")
@@ -172,7 +170,7 @@ def upsert_batch(
             raise ValueError(f"Missing required fields {missing} in object: {obj}")
 
         stable_id = str(obj["id"])
-        uid = str(uuid.uuid5(uuid.NAMESPACE_URL, stable_id))
+        uid = uuid.uuid5(uuid.NAMESPACE_URL, stable_id)
         vector = obj["vector"]
         vector_row = _normalize_vectors([vector])[0]
 
@@ -187,31 +185,19 @@ def upsert_batch(
         }
         return uid, properties, vector_row
 
-    buffer: List[Tuple[str, Dict[str, Any], List[float]]] = []
     total = 0
-
     for raw_obj in objects:
         uid, props, vector_row = _normalize_object(raw_obj)
-        buffer.append((uid, props, vector_row))
-
-        if len(buffer) >= batch_size:
-            for buid, bprops, bvector in buffer:
-                try:
-                    coll.data.delete_by_id(buid)
-                except Exception:
-                    pass
-                coll.data.insert(properties=bprops, uuid=buid, vector=bvector)
-                total += 1
-            buffer.clear()
-
-    if buffer:
-        for buid, bprops, bvector in buffer:
-            try:
-                coll.data.delete_by_id(buid)
-            except Exception:
-                pass
-            coll.data.insert(properties=bprops, uuid=buid, vector=bvector)
-            total += 1
+        try:
+            coll.data.insert(properties=props, uuid=uid, vector=vector_row)
+        except UnexpectedStatusCodeError as exc:
+            status = getattr(exc, "status_code", None)
+            message = getattr(exc, "message", None) or str(exc)
+            duplicate = status in {409, 422} or "already exists" in message.lower()
+            if not duplicate:
+                raise
+            coll.data.replace(uuid=uid, properties=props, vector=vector_row)
+        total += 1
 
     return total
 

@@ -1,6 +1,13 @@
 # src/embedder.py
 from typing import List, Optional
+
 import numpy as np
+
+from .config import (
+    DEFAULT_EMBEDDER_BATCH_SIZE,
+    DEFAULT_EMBEDDER_DEVICE,
+    DEFAULT_EMBEDDER_MODEL,
+)
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -21,10 +28,10 @@ class Embedder:
 
     def __init__(
         self,
-        model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
+        model_name: str = DEFAULT_EMBEDDER_MODEL,
         *,
-        device: Optional[str] = None,
-        batch_size: int = 32,
+        device: Optional[str] = DEFAULT_EMBEDDER_DEVICE,
+        batch_size: int = DEFAULT_EMBEDDER_BATCH_SIZE,
         dtype: np.dtype = np.float32,
     ) -> None:
         """

@@ -3,7 +3,14 @@ from dataclasses import dataclass
 from pathlib import Path
 import os
 import uuid
+
 from PyPDF2 import PdfReader
+
+from .config import (
+    CHUNK_BOUNDARY_WINDOW,
+    DEFAULT_CHUNK_OVERLAP,
+    DEFAULT_CHUNK_SIZE,
+)
 
 @dataclass
 class Document:
@@ -73,8 +80,9 @@ def load_files(paths: List[str]) -> Iterator[Dict[str, Any]]:
 
 def split_into_chunks(
     doc: Dict[str, Any],
-    chunk_size: int = 800,
-    chunk_overlap: int = 120
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+    boundary_window: int = CHUNK_BOUNDARY_WINDOW,
 ) -> Iterator[Dict[str, Any]]:
     """
     Yield chunks with whitespace-aware boundaries.
@@ -100,7 +108,7 @@ def split_into_chunks(
     start = 0
     idx = 0
 
-    def _snap_boundary(s: int, e: int, max_look: int = 50) -> int:
+    def _snap_boundary(s: int, e: int, max_look: int = boundary_window) -> int:
         # Try forward to next whitespace/newline
         fwd = e
         limit = min(n, e + max_look)
@@ -141,9 +149,10 @@ def split_into_chunks(
 
 def chunk_docs(
     docs: List[Document],
-    chunk_size: int = 1000,
-    chunk_overlap: int = 200,
-    splitter: str = "recursive"
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+    splitter: str = "recursive",
+    boundary_window: int = CHUNK_BOUNDARY_WINDOW,
 ) -> List[Chunk]:
     """Produce deterministic chunk_ids; return list of Chunk dataclasses."""
     chunks: List[Chunk] = []
@@ -156,7 +165,14 @@ def chunk_docs(
         }
         # For now only one splitter implemented (simple paragraph/sentence aware)
         # You can add additional strategies later.
-        parts = list(split_into_chunks(doc_dict, chunk_size=chunk_size, chunk_overlap=chunk_overlap))
+        parts = list(
+            split_into_chunks(
+                doc_dict,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                boundary_window=boundary_window,
+            )
+        )
         for c in parts:
             idx = c["ord"]
             # deterministic chunk uuid
