@@ -20,13 +20,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.chunking import load_files, split_into_chunks  # noqa: E402
-from src.config import (  # noqa: E402
-    COLLECTION_NAME,
-    DEFAULT_CHUNK_OVERLAP,
-    DEFAULT_CHUNK_SIZE,
-    DEFAULT_EMBEDDER_MODEL,
-    DOCS_SCHEMA,
-)
+from src.config import COLLECTION_NAME, DOCS_SCHEMA  # noqa: E402
 from src.embedder import Embedder  # noqa: E402
 from src.weaviate_store import close_client, create_collection_if_missing, upsert_batch  # noqa: E402
 
@@ -55,25 +49,16 @@ def _build_objects(chunks: List[dict], vectors: np.ndarray) -> List[dict]:
         )
     return objects
 
+
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ingest documents into Weaviate.")
     parser.add_argument("data_dir", help="Path to the directory containing documents to ingest.")
-    parser.add_argument(
-        "--chunk-size",
-        type=int,
-        default=DEFAULT_CHUNK_SIZE,
-        help=f"Chunk size in characters (default: {DEFAULT_CHUNK_SIZE}).",
-    )
-    parser.add_argument(
-        "--chunk-overlap",
-        type=int,
-        default=DEFAULT_CHUNK_OVERLAP,
-        help=f"Chunk overlap in characters (default: {DEFAULT_CHUNK_OVERLAP}).",
-    )
+    parser.add_argument("--chunk-size", type=int, default=800, help="Chunk size in characters (default: 800).")
+    parser.add_argument("--chunk-overlap", type=int, default=120, help="Chunk overlap in characters (default: 120).")
     parser.add_argument(
         "--model",
-        default=DEFAULT_EMBEDDER_MODEL,
-        help=f"Sentence-transformers model to use for embeddings (default: {DEFAULT_EMBEDDER_MODEL}).",
+        default="sentence-transformers/all-MiniLM-L6-v2",
+        help="Sentence-transformers model to use for embeddings.",
     )
     parser.add_argument(
         "--collection",
@@ -100,7 +85,7 @@ def main(argv: List[str] | None = None) -> int:
 
     total_docs = 0
     total_chunks = 0
-    upserted = 0
+    batch_objects: List[dict] = []
 
     for doc in _iter_docs([str(data_path)]):
         total_docs += 1
@@ -119,7 +104,9 @@ def main(argv: List[str] | None = None) -> int:
         objects = _build_objects(chunks, vectors)
 
         total_chunks += len(objects)
-        upserted += upsert_batch(objects, collection_name=args.collection)
+        batch_objects.extend(objects)
+
+    upserted = upsert_batch(batch_objects, collection_name=args.collection)
 
     print(
         f"Ingest complete: docs={total_docs}, chunks={total_chunks}, upserted={upserted}, "
