@@ -56,7 +56,8 @@ DOCS_SCHEMA = {
     "name": COLLECTION_NAME,
     "description": "Text chunks from documents (BM25 enabled; vectors stored client-side)",
     "properties": [
-        {"name": "stable_id", "dataType": "text", "description": "Stable chunk identifier doc_id::chunk_id"},
+        {"name": "id", "dataType": "text", "description": "Stable chunk identifier doc_id::chunk_id"},
+        {"name": "stable_id", "dataType": "text", "description": "Legacy chunk identifier (doc_id::chunk_id)"},
         {"name": "text", "dataType": "text", "description": "Chunk text"},
         {"name": "title", "dataType": "text", "description": "Document title"},
         {"name": "source", "dataType": "text", "description": "Source path/URL"},

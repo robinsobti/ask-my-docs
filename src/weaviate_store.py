@@ -175,6 +175,7 @@ def upsert_batch(
         vector_row = _normalize_vectors([vector])[0]
 
         properties = {
+            "id": stable_id,
             "stable_id": stable_id,
             "text": str(obj["text"] or ""),
             "title": str(obj.get("title") or ""),
@@ -217,7 +218,7 @@ def _format_objects(objects: Sequence[Any]) -> List[Dict[str, Any]]:
                     score = max(0.0, 1.0 - float(distance))
                 except (TypeError, ValueError):
                     score = None
-        stable_id = properties.get("stable_id")
+        stable_id = properties.get("id") or properties.get("stable_id")
         if not stable_id:
             doc_part = properties.get("doc_id", "")
             chunk_part = properties.get("chunk_id", "")
