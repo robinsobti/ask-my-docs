@@ -16,5 +16,6 @@ services:
       PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
       QUERY_DEFAULTS_LIMIT: "25"
       CLUSTER_HOSTNAME: "node1"
+      ENABLE_API_V2: "true"
     volumes:
       - ./weaviate_data:/var/lib/weaviate

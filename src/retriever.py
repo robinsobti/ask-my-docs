@@ -6,15 +6,20 @@ from __future__ import annotations
 
 from typing import Dict, List, Literal, Optional, TYPE_CHECKING, cast
 
-from .config import COLLECTION_NAME
-from .weaviate_store import create_collection_if_missing, get_client
+import numpy as np
+
+from .config import (
+    COLLECTION_NAME,
+    DEFAULT_HYBRID_ALPHA,
+    DEFAULT_RETRIEVAL_MODE,
+    DEFAULT_RETRIEVAL_TOP_K,
+)
+from .weaviate_store import create_collection_if_missing, search_bm25, search_vector
 
 if TYPE_CHECKING:  # pragma: no cover - import for typing only
     from .embedder import Embedder
 
 Mode = Literal["bm25", "vector", "hybrid"]
-
-_PROPERTIES = ["title", "text", "source"]
 
 
 def _normalize_mode(mode: str) -> Mode:
@@ -30,57 +35,13 @@ def _require_embedder(embedder: Optional["Embedder"], mode: Mode) -> "Embedder":
     return embedder
 
 
-def _extract_score(metadata: object) -> float:
-    """
-    Attempt to derive a comparable score from Weaviate metadata objects.
-    Works for BM25 (score), hybrid (score), and vector (distance/certainty).
-    """
-    if metadata is None:
-        return 0.0
-
-    score = getattr(metadata, "score", None)
-    if score is not None:
-        return float(score)
-
-    certainty = getattr(metadata, "certainty", None)
-    if certainty is not None:
-        return float(certainty)
-
-    distance = getattr(metadata, "distance", None)
-    if distance is not None:
-        try:
-            return float(1.0 - float(distance))
-        except (TypeError, ValueError):
-            pass
-
-    return 0.0
-
-
-def _format_hits(objects: List[object]) -> List[Dict[str, object]]:
-    hits: List[Dict[str, object]] = []
-    for obj in objects:
-        properties = getattr(obj, "properties", {}) or {}
-        hits.append(
-            {
-                "id": getattr(obj, "uuid", ""),
-                "score": _extract_score(getattr(obj, "metadata", None)),
-                "text": properties.get("text", ""),
-                "title": properties.get("title", ""),
-                "source": properties.get("source", ""),
-            }
-        )
-
-    # Ensure descending order even if backend already sorts.
-    hits.sort(key=lambda h: h["score"], reverse=True)
-    return hits
-
-
 def retrieve(
-    collection: str,
     query: str,
-    k: int = 5,
-    mode: str = "hybrid",
-    alpha: float = 0.5,
+    mode: str = DEFAULT_RETRIEVAL_MODE,
+    k: int = DEFAULT_RETRIEVAL_TOP_K,
+    alpha: float = DEFAULT_HYBRID_ALPHA,
+    *,
+    collection: str = COLLECTION_NAME,
     embedder: Optional["Embedder"] = None,
 ) -> List[Dict[str, object]]:
     """
@@ -88,35 +49,106 @@ def retrieve(
     Returns a list of hits: { "id", "score", "text", "title", "source" }.
     """
     mode_normalized = _normalize_mode(mode)
-
     if k <= 0:
+        raise ValueError("k must be > 0.")
+
+    query = query.strip()
+    if not query:
         return []
 
     if mode_normalized == "hybrid" and not 0.0 <= alpha <= 1.0:
         raise ValueError("Hybrid alpha must be between 0.0 and 1.0.")
 
-    if collection == COLLECTION_NAME:
-        coll = create_collection_if_missing()
-    else:
-        client = get_client()
-        coll = client.collections.get(collection)
+    # Ensure the collection exists before querying.
+    create_collection_if_missing(name=collection)
 
     if mode_normalized == "bm25":
-        result = coll.query.bm25(query=query, limit=k, return_properties=_PROPERTIES)
-        return _format_hits(getattr(result, "objects", []))
+        return search_bm25(query=query, k=k, collection_name=collection)
 
-    query_vector = _require_embedder(embedder, mode_normalized).encode([query])[0].tolist()
+    embed = _require_embedder(embedder, mode_normalized)
+    query_vector = np.asarray(embed.encode([query], normalize=True))[0]
 
     if mode_normalized == "vector":
-        result = coll.query.near_vector(vector=query_vector, limit=k, return_properties=_PROPERTIES)
-        return _format_hits(getattr(result, "objects", []))
+        return search_vector(query_vector, k=k, collection_name=collection)
 
-    # mode == "hybrid"
-    result = coll.query.hybrid(
-        query=query,
-        vector=query_vector,
-        alpha=alpha,
-        limit=k,
-        return_properties=_PROPERTIES,
-    )
-    return _format_hits(getattr(result, "objects", []))
+    # Hybrid: fuse BM25 + vector scores.
+    bm25_hits = search_bm25(query=query, k=k, collection_name=collection)
+    vector_hits = search_vector(query_vector, k=k, collection_name=collection)
+    fused = fuse_hybrid(bm25_hits, vector_hits, alpha=alpha)
+    return fused[:k]
+
+
+def retrieve_with_vector(
+    q_vec: np.ndarray,
+    k: int = DEFAULT_RETRIEVAL_TOP_K,
+    *,
+    collection: str = COLLECTION_NAME,
+) -> List[Dict[str, object]]:
+    """
+    Convenience helper when the caller already has a normalized query vector.
+    """
+    if k <= 0:
+        raise ValueError("k must be > 0.")
+    if q_vec.ndim != 1:
+        raise ValueError("q_vec must be a 1-D numpy array.")
+    create_collection_if_missing(name=collection)
+    return search_vector(q_vec, k=k, collection_name=collection)
+
+
+def fuse_hybrid(
+    bm25_hits: List[Dict[str, object]],
+    vector_hits: List[Dict[str, object]],
+    alpha: float = DEFAULT_HYBRID_ALPHA,
+) -> List[Dict[str, object]]:
+    """
+    Combine lexical and vector scores by weighted sum (score-level fusion).
+    """
+    if not 0.0 <= alpha <= 1.0:
+        raise ValueError("Hybrid alpha must be between 0.0 and 1.0.")
+
+    combined: Dict[str, Dict[str, object]] = {}
+
+    for hit in bm25_hits:
+        combined[hit["id"]] = {
+            "id": hit["id"],
+            "title": hit.get("title", ""),
+            "text": hit.get("text", ""),
+            "source": hit.get("source", ""),
+            "bm25_score": float(hit.get("score", 0.0) or 0.0),
+            "vector_score": 0.0,
+        }
+
+    for hit in vector_hits:
+        entry = combined.setdefault(
+            hit["id"],
+            {
+                "id": hit["id"],
+                "title": hit.get("title", ""),
+                "text": hit.get("text", ""),
+                "source": hit.get("source", ""),
+                "bm25_score": 0.0,
+                "vector_score": 0.0,
+            },
+        )
+        entry["vector_score"] = float(hit.get("score", 0.0) or 0.0)
+        # Prefer non-empty metadata from vector result
+        for key in ("title", "text", "source"):
+            if not entry.get(key):
+                entry[key] = hit.get(key, "")
+
+    fused: List[Dict[str, object]] = []
+    for entry in combined.values():
+        bm_score = float(entry.get("bm25_score", 0.0) or 0.0)
+        vec_score = float(entry.get("vector_score", 0.0) or 0.0)
+        fused.append(
+            {
+                "id": entry["id"],
+                "title": entry.get("title", ""),
+                "text": entry.get("text", ""),
+                "source": entry.get("source", ""),
+                "score": alpha * bm_score + (1.0 - alpha) * vec_score,
+            }
+        )
+
+    fused.sort(key=lambda hit: hit["score"], reverse=True)
+    return fused
