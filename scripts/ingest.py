@@ -34,10 +34,10 @@ def _build_objects(chunks: List[dict], vectors: np.ndarray) -> List[dict]:
     for idx, chunk in enumerate(chunks):
         doc_id = chunk.get("doc_id", "")
         chunk_id = chunk.get("chunk_id", "")
-        stable_id = f"{doc_id}::{chunk_id}"
+        uid = f"{doc_id}::{chunk_id}"
         objects.append(
             {
-                "id": stable_id,
+                "id": uid,
                 "doc_id": doc_id,
                 "chunk_id": chunk_id,
                 "title": chunk.get("title", ""),
