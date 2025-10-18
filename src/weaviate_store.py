@@ -8,6 +8,7 @@ import numpy as np
 import weaviate
 from weaviate.classes.config import Configure, DataType, Property
 from weaviate.collections import collection
+from weaviate.classes.query import MetadataQuery
 from weaviate.exceptions import UnexpectedStatusCodeError, WeaviateBaseError
 
 from .config import (
@@ -175,6 +176,7 @@ def upsert_batch(
         vector_row = _normalize_vectors([vector])[0]
 
         properties = {
+            "id": stable_id,
             "stable_id": stable_id,
             "text": str(obj["text"] or ""),
             "title": str(obj.get("title") or ""),
@@ -217,7 +219,7 @@ def _format_objects(objects: Sequence[Any]) -> List[Dict[str, Any]]:
                     score = max(0.0, 1.0 - float(distance))
                 except (TypeError, ValueError):
                     score = None
-        stable_id = properties.get("stable_id")
+        stable_id = properties.get("id") or properties.get("stable_id")
         if not stable_id:
             doc_part = properties.get("doc_id", "")
             chunk_part = properties.get("chunk_id", "")
@@ -284,7 +286,8 @@ def search_vector(
         raise ValueError("q_vec must be a 1-D numpy array.")
     coll = _resolve_collection(collection_name)
     res = coll.query.near_vector(
-        vector=q_vec.tolist(),
+        near_vector=q_vec.tolist(),
         limit=k,
+        return_metadata=MetadataQuery(distance=True, certainty=True),
     )
     return _format_objects(getattr(res, "objects", []))

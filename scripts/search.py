@@ -17,7 +17,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.config import COLLECTION_NAME  # noqa: E402
+from src.config import (  # noqa: E402
+    COLLECTION_NAME,
+    DEFAULT_EMBEDDER_MODEL,
+    DEFAULT_HYBRID_ALPHA,
+    DEFAULT_RETRIEVAL_MODE,
+    DEFAULT_RETRIEVAL_TOP_K,
+)  # noqa: E402
 from src.embedder import Embedder  # noqa: E402
 from src.retriever import Mode, retrieve  # noqa: E402
 from src.weaviate_store import close_client  # noqa: E402
@@ -26,13 +32,28 @@ from src.weaviate_store import close_client  # noqa: E402
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Search the Weaviate collection.")
     parser.add_argument("--q", required=True, help="Query text.")
-    parser.add_argument("--mode", choices=["bm25", "vector", "hybrid"], default="hybrid", help="Retrieval mode.")
-    parser.add_argument("--k", type=int, default=5, help="Number of results to return.")
-    parser.add_argument("--alpha", type=float, default=0.5, help="Hybrid score weighting (only for hybrid mode).")
+    parser.add_argument(
+        "--mode",
+        choices=["bm25", "vector", "hybrid"],
+        default=DEFAULT_RETRIEVAL_MODE,
+        help=f"Retrieval mode (default: {DEFAULT_RETRIEVAL_MODE}).",
+    )
+    parser.add_argument(
+        "--k",
+        type=int,
+        default=DEFAULT_RETRIEVAL_TOP_K,
+        help=f"Number of results to return (default: {DEFAULT_RETRIEVAL_TOP_K}).",
+    )
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=DEFAULT_HYBRID_ALPHA,
+        help=f"Hybrid score weighting (default: {DEFAULT_HYBRID_ALPHA}).",
+    )
     parser.add_argument(
         "--model",
-        default="sentence-transformers/all-MiniLM-L6-v2",
-        help="Sentence-transformers model to use for embeddings (vector/hybrid modes).",
+        default=DEFAULT_EMBEDDER_MODEL,
+        help=f"Sentence-transformers model to use for embeddings (vector/hybrid modes). Default: {DEFAULT_EMBEDDER_MODEL}.",
     )
     parser.add_argument(
         "--collection",
