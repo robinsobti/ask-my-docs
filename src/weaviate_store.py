@@ -8,6 +8,7 @@ import numpy as np
 import weaviate
 from weaviate.classes.config import Configure, DataType, Property
 from weaviate.collections import collection
+from weaviate.classes.query import MetadataQuery
 from weaviate.exceptions import UnexpectedStatusCodeError, WeaviateBaseError
 
 from .config import (
@@ -285,7 +286,8 @@ def search_vector(
         raise ValueError("q_vec must be a 1-D numpy array.")
     coll = _resolve_collection(collection_name)
     res = coll.query.near_vector(
-        vector=q_vec.tolist(),
+        near_vector=q_vec.tolist(),
         limit=k,
+        return_metadata=MetadataQuery(distance=True, certainty=True),
     )
     return _format_objects(getattr(res, "objects", []))
