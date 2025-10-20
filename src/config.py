@@ -40,6 +40,9 @@ DEFAULT_EMBEDDER_MODEL = os.getenv("EMBEDDER_MODEL", "sentence-transformers/all-
 DEFAULT_EMBEDDER_BATCH_SIZE = _env_int("EMBEDDER_BATCH_SIZE", 32)
 DEFAULT_EMBEDDER_DEVICE: Optional[str] = os.getenv("EMBEDDER_DEVICE") or None
 
+# Generator defaults
+DEFAULT_GENERATOR_MODEL = os.getenv("GENERATOR_MODEL", "gpt-4o-mini")
+
 # Retrieval defaults
 _ALLOWED_RETRIEVAL_MODES = {"bm25", "vector", "hybrid"}
 DEFAULT_RETRIEVAL_MODE = os.getenv("RETRIEVAL_MODE", "hybrid").lower()
@@ -47,6 +50,7 @@ if DEFAULT_RETRIEVAL_MODE not in _ALLOWED_RETRIEVAL_MODES:
     DEFAULT_RETRIEVAL_MODE = "hybrid"
 DEFAULT_RETRIEVAL_TOP_K = _env_int("RETRIEVAL_TOP_K", 5)
 DEFAULT_HYBRID_ALPHA = _env_float("RETRIEVAL_ALPHA", 0.5)
+DEFAULT_RERANK_DEPTH = _env_int("RERANK_DEPTH", 25)
 
 # Upsert batching defaults
 DEFAULT_UPSERT_BATCH_SIZE = _env_int("UPSERT_BATCH_SIZE", 100)
@@ -56,7 +60,6 @@ DOCS_SCHEMA = {
     "name": COLLECTION_NAME,
     "description": "Text chunks from documents (BM25 enabled; vectors stored client-side)",
     "properties": [
-        {"name": "id", "dataType": "text", "description": "Stable chunk identifier doc_id::chunk_id"},
         {"name": "stable_id", "dataType": "text", "description": "Legacy chunk identifier (doc_id::chunk_id)"},
         {"name": "text", "dataType": "text", "description": "Chunk text"},
         {"name": "title", "dataType": "text", "description": "Document title"},

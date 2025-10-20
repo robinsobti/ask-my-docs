@@ -176,7 +176,6 @@ def upsert_batch(
         vector_row = _normalize_vectors([vector])[0]
 
         properties = {
-            "id": stable_id,
             "stable_id": stable_id,
             "text": str(obj["text"] or ""),
             "title": str(obj.get("title") or ""),
