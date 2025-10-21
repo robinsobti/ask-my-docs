@@ -281,7 +281,7 @@ def search_vector(
     Vector (semantic) search using a pre-computed query vector.
     Returns normalized hits with score derived from vector distance.
     """
-    if q_vec.ndim != 1:
+    if q_vec.   ndim != 1:
         raise ValueError("q_vec must be a 1-D numpy array.")
     coll = _resolve_collection(collection_name)
     res = coll.query.near_vector(

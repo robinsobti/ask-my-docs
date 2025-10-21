@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Dict, Any
 
 import streamlit as st
 
@@ -12,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.config import (  # noqa: E402
     DEFAULT_GENERATOR_MODEL,
+    DEFAULT_EMBEDDER_MODEL,
     DEFAULT_HYBRID_ALPHA,
     DEFAULT_RERANK_DEPTH,
     DEFAULT_RETRIEVAL_MODE,
@@ -31,10 +33,8 @@ try:
 except ImportError:
     generator = None
 
-try:
-    import src.obs as obs  # type: ignore[attr-defined]  # noqa: F401
-except ImportError:
-    obs = None
+import src.obs as obs  # type: ignore[attr-defined]  # noqa: F401
+from src.obs import new_ctx, timer, append_query_log
 
 if "run_id" not in st.session_state:
     st.session_state["run_id"] = None
@@ -76,7 +76,8 @@ with st.sidebar:
     rerank_depth = st.slider("rerank_depth", min_value=10, max_value=100, value=default_rerank_depth, step=5)
     generator_model = st.text_input("Generator model", value=DEFAULT_GENERATOR_MODEL)
     show_sources = st.slider("Show sources", min_value=1, max_value=5, value=3, step=1)
-    st.caption("Logs written to runs/<timestamp>/queries.jsonl")
+    if st.session_state["run_id"]:
+        st.caption(f"Logs written to runs/{st.session_state['run_id']}/queries.jsonl")
     run_id = st.session_state.get("run_id")
     if run_id:
         st.caption(f"Run id: {run_id}")
@@ -95,28 +96,62 @@ settings = {
 st.session_state["settings"] = settings
 
 query_params = st.query_params
-print(f"query_params: {query_params}")
 raw_query = query_params.get("q", "")
-print(f"raw_query: {raw_query}")
 if isinstance(raw_query, list):
-    initial_question = raw_query[0] if raw_query else ""
+    raw_query = raw_query[0] if raw_query else ""
 else:
-    initial_question = raw_query or ""
+    raw_query = raw_query or ""
 
-def _sync_query_param() -> None:
-    value = st.session_state.get("question", "").strip()
-    params = dict(st.query_params)
-    if value:
-        params["q"] = value
+if "question" not in st.session_state:
+    st.session_state["question"] = raw_query
+
+
+def _sync_query_params_from_question() -> None:
+    """Keep the URL's `q` query parameter aligned with the current question."""
+    question_value = st.session_state.get("question", "").strip()
+
+    current_param = st.query_params.get("q", "")
+    if isinstance(current_param, list):
+        current_param = current_param[0] if current_param else ""
     else:
-        params.pop("q", None)
-    st.query_params = params
+        current_param = current_param or ""
+
+    if question_value:
+        if current_param != question_value:
+            st.query_params["q"] = question_value
+    elif "q" in st.query_params:
+        del st.query_params["q"]
+
+
+def question_text_changed() -> None:
+    _sync_query_params_from_question()
+
 
 question = st.text_input(
     "Ask a question about your documents",
-    value=initial_question,
+    value=st.session_state.get("question", ""),
     key="question",
-    on_change=_sync_query_param,
+    on_change=question_text_changed,
 )
+
+_sync_query_params_from_question()
+
 ask_disabled = not question.strip()
-ask_clicked = st.button("Ask", disabled=ask_disabled, type="primary")
+
+
+def ask_button_clicked() -> None:
+    """Placeholder callback to preserve button on_click wiring."""
+    params = {
+        "mode": retrieval_mode,
+        "k": top_k,
+        "alpha": hybrid_alpha,
+        "generator_model": generator_model,
+        "embed_model": DEFAULT_EMBEDDER_MODEL
+    }
+    ctx: Dict[str, Any] = new_ctx(st.session_state["run_id"], st.session_state.get("question", "").strip(), params)
+    with timer("retrieve", ctx):
+        print(f"Inside timer: {ctx}")
+        print(f"almost Done timer: {ctx}")
+    append_query_log(Path(st.session_state["log_path"]), record=ctx)
+
+ask_clicked = st.button("Ask", disabled=ask_disabled, type="primary", on_click=ask_button_clicked)

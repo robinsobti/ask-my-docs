@@ -1,25 +1,97 @@
+from __future__ import annotations
+
+import json
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
-from datetime import datetime
+from time import perf_counter
+from typing import Any, Dict, Iterator, MutableMapping
 
 
 def init_run_log() -> tuple[str, Path]:
     """
-    Initializes a run log directory and queries file.
-
-    Returns:
-        tuple[str, Path]: 
-            - run_identifier: A string representing the UTC timestamp used as the unique run directory name.
-            - queries_path: The absolute Path to the created 'queries.jsonl' file inside the run directory.
+    Initialize a run directory and the queries.jsonl log file.
     """
     base_dir = Path("runs")
     base_dir.mkdir(parents=True, exist_ok=True)
 
-    # Run identifier uses UTC timestamp in 'YYYY-MM-DD_HHMM-SS' format for unique run directories
-    run_identifier = datetime.now().strftime("%Y-%m-%d_%H%M-%S")
+    run_identifier = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M-%S")
     run_dir = base_dir / run_identifier
     run_dir.mkdir(parents=True, exist_ok=True)
 
     queries_path = run_dir / "queries.jsonl"
     queries_path.touch(exist_ok=True)
-
     return run_identifier, queries_path.resolve()
+
+
+def new_ctx(run_id: str, query: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Return a mutable context dict used to accumulate observability metadata.
+    """
+    return {
+        "run_id": run_id,
+        "query": query,
+        "params": dict(params),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "stages": {},
+        "top_docs": [],
+        "answer": None,
+        "answer_chars": None,
+        "answer_citations": [],
+        "token_usage": None,
+        "latency_ms": None,
+        "error": None,
+    }
+
+@contextmanager
+def timer(stage: str, ctx: MutableMapping[str, Any]) -> Iterator[None]:
+    """
+    Context manager that records elapsed time for a named stage.
+    """
+    if ctx is None:
+        raise ValueError("ctx is required for timing.")
+
+    stages = ctx.setdefault("stages", {})
+    start_dt = datetime.now(timezone.utc)
+    start_perf = perf_counter()
+    try:
+        yield
+    finally:
+        elapsed_ms = (perf_counter() - start_perf) * 1000.0
+        end_dt = datetime.now(timezone.utc)
+        stages[stage] = {
+            "started_at": start_dt.isoformat(),
+            "ended_at": end_dt.isoformat(),
+            "elapsed_ms": round(elapsed_ms, 3),
+        }
+        print(f"Setting stages to ctx: {stages}")
+        ctx.setdefault("stages", stages)
+        print(f"ctx: {ctx}")
+
+
+def append_query_log(path: Path, record: Dict[str, Any]) -> None:
+    """
+    Append a single JSONL record to the provided path.
+    """
+    normalized_path = path.expanduser()
+    normalized_path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(record, ensure_ascii=True)
+    with normalized_path.open("a", encoding="utf-8") as handle:
+        handle.write(line)
+        handle.write("\n")
+
+
+def record_error(ctx: MutableMapping[str, Any], exc: Exception | str) -> None:
+    """
+    Store error information on the context for downstream logging.
+    """
+    if isinstance(exc, Exception):
+        message = str(exc)
+        error_type = type(exc).__name__
+    else:
+        message = str(exc)
+        error_type = "Error"
+    ctx["error"] = {
+        "type": error_type,
+        "message": message,
+    }
