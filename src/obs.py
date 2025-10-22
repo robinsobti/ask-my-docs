@@ -64,9 +64,7 @@ def timer(stage: str, ctx: MutableMapping[str, Any]) -> Iterator[None]:
             "ended_at": end_dt.isoformat(),
             "elapsed_ms": round(elapsed_ms, 3),
         }
-        print(f"Setting stages to ctx: {stages}")
         ctx.setdefault("stages", stages)
-        print(f"ctx: {ctx}")
 
 
 def append_query_log(path: Path, record: Dict[str, Any]) -> None:

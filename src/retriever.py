@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Dict, List, Literal, Optional, TYPE_CHECKING, cast
 
 import numpy as np
+from src.embedder import Embedder
 
 from .config import (
     COLLECTION_NAME,
@@ -16,8 +17,8 @@ from .config import (
 )
 from .weaviate_store import create_collection_if_missing, search_bm25, search_vector
 
-if TYPE_CHECKING:  # pragma: no cover - import for typing only
-    from .embedder import Embedder
+# if TYPE_CHECKING:  # pragma: no cover - import for typing only
+#     from .embedder import Embedder
 
 Mode = Literal["bm25", "vector", "hybrid"]
 
@@ -66,7 +67,8 @@ def retrieve(
         return search_bm25(query=query, k=k, collection_name=collection)
 
     embed = _require_embedder(embedder, mode_normalized)
-    query_vector = np.asarray(embed.encode([query], normalize=True))[0]
+    print(type(embedder))
+    query_vector = np.asarray(embed.encode(texts=[query], normalize=True)[0])
 
     if mode_normalized == "vector":
         return search_vector(query_vector, k=k, collection_name=collection)
@@ -76,7 +78,6 @@ def retrieve(
     vector_hits = search_vector(query_vector, k=k, collection_name=collection)
     fused = fuse_hybrid(bm25_hits, vector_hits, alpha=alpha)
     return fused[:k]
-
 
 def retrieve_with_vector(
     q_vec: np.ndarray,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 import streamlit as st
 
@@ -27,6 +27,11 @@ try:
 except ImportError as exc:  # pragma: no cover - surfaced in UI instead
     st.error(f"Failed to import retriever module: {exc}")
     st.stop()
+
+try:
+    from src.embedder import Embedder  # type: ignore[attr-defined]  # noqa: F401
+except ImportError:
+    Embedder = None
 
 try:
     import src.generator as generator  # type: ignore[attr-defined]  # noqa: F401
@@ -150,8 +155,11 @@ def ask_button_clicked() -> None:
     }
     ctx: Dict[str, Any] = new_ctx(st.session_state["run_id"], st.session_state.get("question", "").strip(), params)
     with timer("retrieve", ctx):
-        print(f"Inside timer: {ctx}")
-        print(f"almost Done timer: {ctx}")
+        results = retriever.retrieve(query=question, mode=retrieval_mode, k=top_k, alpha=hybrid_alpha, embedder=Embedder())
+        results_to_show = results[:show_sources]
+        prompt = generator.build_prompt(query=question, docs = results)
+        #TODO fix arguments
+        generator.generate_answer(prompt = prompt, model = generator_model, max_tokens=500)
     append_query_log(Path(st.session_state["log_path"]), record=ctx)
 
 ask_clicked = st.button("Ask", disabled=ask_disabled, type="primary", on_click=ask_button_clicked)
