@@ -26,6 +26,16 @@ def _env_float(name: str, default: float) -> float:
         raise ValueError(f"Environment variable {name} must be a float. Got {value!r}.") from exc
 
 
+def _env_float_optional(name: str) -> Optional[float]:
+    value = os.getenv(name)
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise ValueError(f"Environment variable {name} must be a float. Got {value!r}.") from exc
+
+
 WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8080")
 
 COLLECTION_NAME = os.getenv("WEAVIATE_COLLECTION", "Docs")
@@ -40,6 +50,9 @@ DEFAULT_EMBEDDER_MODEL = os.getenv("EMBEDDER_MODEL", "sentence-transformers/all-
 DEFAULT_EMBEDDER_BATCH_SIZE = _env_int("EMBEDDER_BATCH_SIZE", 32)
 DEFAULT_EMBEDDER_DEVICE: Optional[str] = os.getenv("EMBEDDER_DEVICE") or None
 
+# Generator defaults
+DEFAULT_GENERATOR_MODEL = os.getenv("GENERATOR_MODEL", "gpt-4o-mini")
+
 # Retrieval defaults
 _ALLOWED_RETRIEVAL_MODES = {"bm25", "vector", "hybrid"}
 DEFAULT_RETRIEVAL_MODE = os.getenv("RETRIEVAL_MODE", "hybrid").lower()
@@ -47,6 +60,17 @@ if DEFAULT_RETRIEVAL_MODE not in _ALLOWED_RETRIEVAL_MODES:
     DEFAULT_RETRIEVAL_MODE = "hybrid"
 DEFAULT_RETRIEVAL_TOP_K = _env_int("RETRIEVAL_TOP_K", 5)
 DEFAULT_HYBRID_ALPHA = _env_float("RETRIEVAL_ALPHA", 0.5)
+DEFAULT_RERANK_DEPTH = _env_int("RERANK_DEPTH", 25)
+
+# OPEN AI API defaults
+OPENAI_MAX_TOKENS = _env_int("RETRIEVAL_TOP_K", 1000)
+OPENAI_TEMPERATURE = _env_float("RETRIEVAL_TOP_K", 0.3)
+OPENAI_TOP_P = _env_float("RETRIEVAL_TOP_K", 0.3)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
+# Pricing (optional; set via env)
+PRICE_PROMPT_PER_1K = _env_float_optional("PRICE_PROMPT_PER_1K")
+PRICE_COMPLETION_PER_1K = _env_float_optional("PRICE_COMPLETION_PER_1K")
 
 # Upsert batching defaults
 DEFAULT_UPSERT_BATCH_SIZE = _env_int("UPSERT_BATCH_SIZE", 100)

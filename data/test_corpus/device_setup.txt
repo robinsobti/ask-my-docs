@@ -1,0 +1,3 @@
+Smart Rower Setup Checklist
+
+Unbox the frame and lay it on a flat surface. Attach the rail using the two provided M8 bolts, tightening them evenly with the included hex key. Plug the power cable into a surge-protected outlet before connecting the flywheel module. Pair the touchscreen by holding the power button for 5 seconds until the LED blinks blue, then follow the on-screen Wi-Fi prompts. Update firmware immediately after pairing to ensure the latest performance metrics and safety fixes.
