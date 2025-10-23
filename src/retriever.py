@@ -67,7 +67,6 @@ def retrieve(
         return search_bm25(query=query, k=k, collection_name=collection)
 
     embed = _require_embedder(embedder, mode_normalized)
-    print(type(embedder))
     query_vector = np.asarray(embed.encode(texts=[query], normalize=True)[0])
 
     if mode_normalized == "vector":

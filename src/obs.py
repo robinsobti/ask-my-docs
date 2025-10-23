@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,24 @@ def init_run_log() -> tuple[str, Path]:
 
     queries_path = run_dir / "queries.jsonl"
     queries_path.touch(exist_ok=True)
+
+    latest_path = base_dir / "latest"
+    target = run_dir.resolve()
+    try:
+        if latest_path.exists() or latest_path.is_symlink():
+            if latest_path.is_symlink() or latest_path.is_file():
+                latest_path.unlink()
+            else:
+                shutil.rmtree(latest_path)
+        latest_path.symlink_to(target, target_is_directory=True)
+    except OSError:
+        # Fallback to a mirrored directory when symlinks are not supported.
+        if latest_path.exists():
+            if latest_path.is_symlink() or latest_path.is_file():
+                latest_path.unlink()
+            else:
+                shutil.rmtree(latest_path)
+        shutil.copytree(target, latest_path)
     return run_identifier, queries_path.resolve()
 
 
@@ -35,10 +54,12 @@ def new_ctx(run_id: str, query: str, params: Dict[str, Any]) -> Dict[str, Any]:
         "created_at": datetime.now(timezone.utc).isoformat(),
         "stages": {},
         "top_docs": [],
+        "reranked_docs": [],
         "answer": None,
         "answer_chars": None,
         "answer_citations": [],
         "token_usage": None,
+        "cost_usd": None,
         "latency_ms": None,
         "error": None,
     }

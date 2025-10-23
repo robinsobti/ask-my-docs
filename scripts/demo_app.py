@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any, Dict
 
 import streamlit as st
 
@@ -18,6 +18,8 @@ from src.config import (  # noqa: E402
     DEFAULT_RERANK_DEPTH,
     DEFAULT_RETRIEVAL_MODE,
     DEFAULT_RETRIEVAL_TOP_K,
+    PRICE_COMPLETION_PER_1K,
+    PRICE_PROMPT_PER_1K
 )
 
 st.set_page_config(page_title="Ask-My-Docs", layout="wide")
@@ -39,7 +41,7 @@ except ImportError:
     generator = None
 
 import src.obs as obs  # type: ignore[attr-defined]  # noqa: F401
-from src.obs import new_ctx, timer, append_query_log
+from src.obs import append_query_log, new_ctx, record_error, timer
 
 if "run_id" not in st.session_state:
     st.session_state["run_id"] = None
@@ -145,21 +147,108 @@ ask_disabled = not question.strip()
 
 
 def ask_button_clicked() -> None:
-    """Placeholder callback to preserve button on_click wiring."""
+    """Handle Ask button presses and log instrumentation."""
+    if generator is None:
+        st.error("Generator module is unavailable.")
+        return
+    if retrieval_mode in ("vector", "hybrid") and Embedder is None:
+        st.error("Embedder module is required for the selected retrieval mode.")
+        return
+    if st.session_state.get("run_id") is None or st.session_state.get("log_path") is None:
+        st.error("Run logging is not initialized.")
+        return
+
+    question_text = st.session_state.get("question", "").strip()
+    if not question_text:
+        st.warning(f"Question cannot be blank: {exc}")
+        return
+    
     params = {
         "mode": retrieval_mode,
         "k": top_k,
         "alpha": hybrid_alpha,
         "generator_model": generator_model,
-        "embed_model": DEFAULT_EMBEDDER_MODEL
+        "embed_model": DEFAULT_EMBEDDER_MODEL,
+        "rerank_depth": rerank_depth,
     }
-    ctx: Dict[str, Any] = new_ctx(st.session_state["run_id"], st.session_state.get("question", "").strip(), params)
-    with timer("retrieve", ctx):
-        results = retriever.retrieve(query=question, mode=retrieval_mode, k=top_k, alpha=hybrid_alpha, embedder=Embedder())
-        results_to_show = results[:show_sources]
-        prompt = generator.build_prompt(query=question, docs = results)
-        #TODO fix arguments
-        generator.generate_answer(prompt = prompt, model = generator_model, max_tokens=500)
+    ctx: Dict[str, Any] = new_ctx(st.session_state["run_id"], question_text, params)
+
+    embedder_instance = None
+    results = []
+    reranked_results = []
+    prompt = ""
+    answer_text = ""
+    token_usage: Dict[str, Any] | None = None
+
+    try:
+        with timer("retrieve", ctx):
+            if retrieval_mode in ("vector", "hybrid") and Embedder is not None:
+                embedder_instance = Embedder(model_name=DEFAULT_EMBEDDER_MODEL)
+            results = retriever.retrieve(
+                query=question_text,
+                mode=retrieval_mode,
+                k=top_k,
+                alpha=hybrid_alpha,
+                embedder=embedder_instance,
+            )
+        ctx["top_docs"] = results[:show_sources]
+
+        with timer("rerank", ctx):
+            reranked_results = results  # Stub: no reranking implemented yet.
+        ctx["reranked_docs"] = reranked_results[:show_sources]
+
+        with timer("prompt_build", ctx):
+            prompt = generator.build_prompt(query=question_text, docs=reranked_results)
+        ctx["prompt_chars"] = len(prompt)
+
+        with timer("llm_generate", ctx):
+            answer_text, token_usage = generator.generate_answer(
+                prompt=prompt,
+                model=generator_model,
+                max_tokens=500,
+            )
+        ctx["answer"] = answer_text
+        ctx["answer_chars"] = len(answer_text)
+        ctx["token_usage"] = token_usage
+
+        cost_usd = None
+        if token_usage is not None and (PRICE_PROMPT_PER_1K is not None or PRICE_COMPLETION_PER_1K is not None):
+            prompt_tokens = int(token_usage.get("prompt_tokens", 0) or 0)
+            completion_tokens = int(token_usage.get("completion_tokens", 0) or 0)
+            cost = 0.0
+            if PRICE_PROMPT_PER_1K is not None:
+                cost += (prompt_tokens / 1000.0) * PRICE_PROMPT_PER_1K
+            if PRICE_COMPLETION_PER_1K is not None:
+                cost += (completion_tokens / 1000.0) * PRICE_COMPLETION_PER_1K
+            cost_usd = round(cost, 6)
+            ctx["cost_usd"] = cost_usd
+        else:
+            ctx["cost_usd"] = None
+
+        with timer("render", ctx):
+            st.session_state["last_results"] = reranked_results[:show_sources]
+            st.session_state["last_answer"] = answer_text
+            st.session_state["last_token_usage"] = token_usage
+            st.session_state["last_cost_usd"] = ctx.get("cost_usd")
+    except Exception as exc:  # pragma: no cover - surfaced in UI bv
+        record_error(ctx, exc)
+        stage_times = {
+            name: stage_info["elapsed_ms"]
+            for name, stage_info in ctx.get("stages", {}).items()
+        }
+        ctx["stage_times_ms"] = stage_times
+        ctx["latency_ms"] = round(sum(stage_times.values()), 3) if stage_times else 0.0
+        append_query_log(Path(st.session_state["log_path"]), record=ctx)
+        st.error(f"Failed to process request: {exc}")
+        return
+
+    stage_times = {
+        name: stage_info["elapsed_ms"]
+        for name, stage_info in ctx.get("stages", {}).items()
+    }
+    ctx["stage_times_ms"] = stage_times
+    ctx["latency_ms"] = round(sum(stage_times.values()), 3) if stage_times else 0.0
+
     append_query_log(Path(st.session_state["log_path"]), record=ctx)
 
 ask_clicked = st.button("Ask", disabled=ask_disabled, type="primary", on_click=ask_button_clicked)
