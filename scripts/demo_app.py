@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 import streamlit as st
+import json
 
 # Ensure project root is importable when launched via `streamlit run`.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +38,8 @@ except ImportError:
 
 try:
     import src.generator as generator  # type: ignore[attr-defined]  # noqa: F401
-except ImportError:
+except ImportError as ex:
+    print(ex)
     generator = None
 
 import src.obs as obs  # type: ignore[attr-defined]  # noqa: F401
@@ -81,6 +83,7 @@ with st.sidebar:
     if retrieval_mode != "hybrid":
         st.caption("Alpha ignored unless hybrid.")
     rerank_depth = st.slider("rerank_depth", min_value=10, max_value=100, value=default_rerank_depth, step=5)
+    st.caption("Takes effect when rerank is enabled (coming in v3)")
     generator_model = st.text_input("Generator model", value=DEFAULT_GENERATOR_MODEL)
     show_sources = st.slider("Show sources", min_value=1, max_value=5, value=3, step=1)
     if st.session_state["run_id"]:
@@ -145,8 +148,7 @@ _sync_query_params_from_question()
 
 ask_disabled = not question.strip()
 
-
-def ask_button_clicked() -> None:
+def ask_button_action() -> None:
     """Handle Ask button presses and log instrumentation."""
     if generator is None:
         st.error("Generator module is unavailable.")
@@ -160,7 +162,7 @@ def ask_button_clicked() -> None:
 
     question_text = st.session_state.get("question", "").strip()
     if not question_text:
-        st.warning(f"Question cannot be blank: {exc}")
+        st.warning("Question cannot be blank.")
         return
     
     params = {
@@ -193,6 +195,32 @@ def ask_button_clicked() -> None:
             )
         ctx["top_docs"] = results[:show_sources]
 
+        if not results:
+            ctx["reranked_docs"] = []
+            ctx["answer"] = ""
+            ctx["answer_chars"] = 0
+            ctx["token_usage"] = None
+            ctx["cost_usd"] = None
+
+            st.session_state["last_results"] = []
+            st.session_state["last_display_docs"] = []
+            st.session_state["prompt"] = ""
+            st.session_state["last_answer"] = ""
+            st.session_state["last_token_usage"] = {}
+            st.session_state["last_cost_usd"] = None
+            st.session_state["last_message"] = "No relevant context found."
+
+            stage_times = {
+                name: stage_info["elapsed_ms"]
+                for name, stage_info in ctx.get("stages", {}).items()
+            }
+            ctx["stage_times_ms"] = stage_times
+            ctx["latency_ms"] = round(sum(stage_times.values()), 3) if stage_times else 0.0
+            st.session_state["last_ctx"] = ctx
+            append_query_log(Path(st.session_state["log_path"]), record=ctx)
+            render_results()
+            return
+
         with timer("rerank", ctx):
             reranked_results = results  # Stub: no reranking implemented yet.
         ctx["reranked_docs"] = reranked_results[:show_sources]
@@ -201,15 +229,41 @@ def ask_button_clicked() -> None:
             prompt = generator.build_prompt(query=question_text, docs=reranked_results)
         ctx["prompt_chars"] = len(prompt)
 
-        with timer("llm_generate", ctx):
-            answer_text, token_usage = generator.generate_answer(
-                prompt=prompt,
-                model=generator_model,
-                max_tokens=500,
-            )
-        ctx["answer"] = answer_text
-        ctx["answer_chars"] = len(answer_text)
-        ctx["token_usage"] = token_usage
+        try:
+            with timer("llm_generate", ctx):
+                answer_text, token_usage = generator.generate_answer(
+                    prompt=prompt,
+                    model=generator_model,
+                    max_tokens=500,
+                )
+            ctx["answer"] = answer_text
+            ctx["answer_chars"] = len(answer_text)
+            ctx["token_usage"] = token_usage
+        except Exception as exc:
+            record_error(ctx, exc)
+            ctx["answer"] = None
+            ctx["answer_chars"] = None
+            ctx["token_usage"] = None
+            ctx["cost_usd"] = None
+
+            st.session_state["last_results"] = reranked_results[:show_sources]
+            st.session_state["last_display_docs"] = reranked_results[:show_sources]
+            st.session_state["prompt"] = prompt
+            st.session_state["last_answer"] = ""
+            st.session_state["last_token_usage"] = {}
+            st.session_state["last_cost_usd"] = None
+            st.session_state["last_message"] = "Unable to generate an answer. Please retry."
+
+            stage_times = {
+                name: stage_info["elapsed_ms"]
+                for name, stage_info in ctx.get("stages", {}).items()
+            }
+            ctx["stage_times_ms"] = stage_times
+            ctx["latency_ms"] = round(sum(stage_times.values()), 3) if stage_times else 0.0
+            st.session_state["last_ctx"] = ctx
+            append_query_log(Path(st.session_state["log_path"]), record=ctx)
+            render_results()
+            return
 
         cost_usd = None
         if token_usage is not None and (PRICE_PROMPT_PER_1K is not None or PRICE_COMPLETION_PER_1K is not None):
@@ -227,10 +281,14 @@ def ask_button_clicked() -> None:
 
         with timer("render", ctx):
             st.session_state["last_results"] = reranked_results[:show_sources]
+            st.session_state["prompt"] = prompt
             st.session_state["last_answer"] = answer_text
             st.session_state["last_token_usage"] = token_usage
             st.session_state["last_cost_usd"] = ctx.get("cost_usd")
-    except Exception as exc:  # pragma: no cover - surfaced in UI bv
+            st.session_state["last_display_docs"] = reranked_results[:show_sources]
+            st.session_state["last_message"] = None
+    
+    except Exception as exc:  # pragma: no cover - surfaced in UI
         record_error(ctx, exc)
         stage_times = {
             name: stage_info["elapsed_ms"]
@@ -248,7 +306,48 @@ def ask_button_clicked() -> None:
     }
     ctx["stage_times_ms"] = stage_times
     ctx["latency_ms"] = round(sum(stage_times.values()), 3) if stage_times else 0.0
-
+    st.session_state["last_ctx"] = ctx
     append_query_log(Path(st.session_state["log_path"]), record=ctx)
+    render_results()
+
+def ask_button_clicked() -> None:
+    with st.spinner("Searching..."):
+        ask_button_action() 
+
+def render_results():
+    answer = st.session_state.get("last_answer", "")
+    docs = st.session_state.get("last_display_docs", [])
+    message = st.session_state.get("last_message")
+    ctx = st.session_state.get("last_ctx", {})
+    st.subheader("Answer")
+    if answer and answer.strip():
+        st.write(answer.strip())
+    else:
+        st.info(message or "No answer generated.")
+    
+    st.subheader("Sources")
+
+    if not docs:
+        st.write("No sources to display.")
+    for index, doc in enumerate(docs, start=1):
+        title = f"[{index}] {doc.get('title') or '<no title>'} — score {float(doc.get('score') or 0):.3f}"
+        snippet = (doc.get("text") or "")[:500]
+        source = doc.get("source") or "<no source>"
+        with st.expander(label=title):
+            st.write(snippet if snippet else "<no excerpt available>")
+            st.write(source)
+
+    with st.expander(label="Prompt (debug)"):
+        st.write(st.session_state.get("prompt", ""))
+
+    with st.expander(label="Stage timings & tokens"):
+        stage_times = ctx.get("stage_times_ms") or {}
+        st.json(stage_times)
+        st.write(f"Latency: {ctx.get('latency_ms', 0.0)} ms")
+        token_usage = st.session_state.get("last_token_usage") or {}
+        st.json(token_usage)
+
+    with st.expander(label="Raw log record"):
+        st.json(ctx)
 
 ask_clicked = st.button("Ask", disabled=ask_disabled, type="primary", on_click=ask_button_clicked)

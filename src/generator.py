@@ -3,10 +3,10 @@ from __future__ import annotations
 import textwrap
 from typing import Any, Dict, Iterable, List, Tuple
 from openai import OpenAI
+from .config import OPENAI_API_KEY, OPENAI_MAX_TOKENS, OPENAI_TEMPERATURE, OPENAI_TOP_P, DEFAULT_GENERATOR_MODEL
 
 openai_client = None
-DEFAULT_MAX_TOKENS = 512
-
+DEFAULT_MAX_TOKENS = 512    
 
 def build_prompt(query: str, docs: Iterable[Dict[str, Any]]) -> str:
     """
@@ -110,11 +110,55 @@ def generate_answer_mock(prompt: str, *, model: str, max_tokens: int = DEFAULT_M
     }
     return answer_text, token_usage
 
+openai_client = None
+def _get_client() -> OpenAI:
+    global openai_client
+    if openai_client is None:
+        openai_client = OpenAI(api_key=OPENAI_API_KEY)
+    return openai_client
+
 def generate_answer(prompt: str, *, model: str, max_tokens: int = DEFAULT_MAX_TOKENS) -> Tuple[str, Dict[str, int | str]]:
-    openai_client = OpenAI()
-    response = openai_client.responses.create(
-    model="gpt-5",
-    input="Write a one-sentence bedtime story about a unicorn."
-    )
-    print(response.output_text)
+    print(f"Prompt: {prompt}")
+    client = _get_client()
+    response = None
+    try:
+        response = client.responses.create(
+        model=model or DEFAULT_GENERATOR_MODEL,
+            input=prompt,
+            temperature=OPENAI_TEMPERATURE,
+            top_p=OPENAI_TOP_P,
+            max_output_tokens=max_tokens or OPENAI_MAX_TOKENS
+        )
+    except Exception as exc:
+        print(f"Error while calling OpenAI: {exc}")
+        return "Unable to generate an answer. Please retry.", {
+            "model": model or DEFAULT_GENERATOR_MODEL,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "max_tokens": max_tokens
+        }
+    
+    print(f"Response: {response.output_text}")
+    answer_text = response.output_text.strip() if getattr(response, "output_text", "") else ""
+    if not answer_text:
+        raise RuntimeError("LLM response did not contain any text.")
+    usage = getattr(response, "usage", None)
+    prompt_tokens = getattr(usage, "input_tokens", 0) or 0
+    completion_tokens = getattr(usage, "output_tokens", 0) or 0
+    total_tokens = getattr(usage, "total_tokens", 0) or prompt_tokens + completion_tokens
+    token_usage: Dict[str, int | str] = {
+        "model": response.model if hasattr(response, "model") else model,
+        "prompt_tokens": int(prompt_tokens),
+        "completion_tokens": int(completion_tokens),
+        "total_tokens": int(total_tokens),
+        "max_tokens": max_tokens,
+    }
+    return answer_text, token_usage
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(generate_answer(prompt="", model=""))
+    finally:
+        print("Done")
 
