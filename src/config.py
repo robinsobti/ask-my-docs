@@ -36,9 +36,18 @@ def _env_float_optional(name: str) -> Optional[float]:
         raise ValueError(f"Environment variable {name} must be a float. Got {value!r}.") from exc
 
 
+_ALLOWED_VECTOR_STORE_PROVIDERS = {"weaviate", "pinecone"}
+VECTOR_STORE_PROVIDER = (os.getenv("VECTOR_STORE_PROVIDER", "weaviate") or "weaviate").strip().lower()
+if VECTOR_STORE_PROVIDER not in _ALLOWED_VECTOR_STORE_PROVIDERS:
+    VECTOR_STORE_PROVIDER = "weaviate"
+
 WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8080")
 
-COLLECTION_NAME = os.getenv("WEAVIATE_COLLECTION", "Docs")
+COLLECTION_NAME = os.getenv("WEAVIATE_COLLECTION", "ask-my-docs")
+
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY", "")
+PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT", "")
+PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX", "ask-my-docs")
 
 # Chunking defaults
 DEFAULT_CHUNK_SIZE = _env_int("CHUNK_SIZE", 800)
@@ -46,10 +55,9 @@ DEFAULT_CHUNK_OVERLAP = _env_int("CHUNK_OVERLAP", 120)
 CHUNK_BOUNDARY_WINDOW = _env_int("CHUNK_BOUNDARY_WINDOW", 50)
 
 # Embedder defaults
-VECTOR_STORE_PROVIDER = os.getenv("VECTOR_STORE_PROVIDER", "weaviate")
-DEFAULT_EMBEDDER_MODEL = os.getenv("EMBEDDER_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+DEFAULT_EMBEDDER_MODEL = os.getenv("EMBEDDER_MODEL", "text-embedding-3-small")
+DEFAULT_EMBED_DIM = _env_int("DEFAULT_EMBED_DIM", 512)
 DEFAULT_EMBEDDER_BATCH_SIZE = _env_int("EMBEDDER_BATCH_SIZE", 32)
-DEFAULT_EMBEDDER_DEVICE: Optional[str] = os.getenv("EMBEDDER_DEVICE") or None
 
 # Generator defaults
 DEFAULT_GENERATOR_MODEL = os.getenv("GENERATOR_MODEL", "gpt-4o-mini")
@@ -58,7 +66,7 @@ DEFAULT_GENERATOR_MODEL = os.getenv("GENERATOR_MODEL", "gpt-4o-mini")
 _ALLOWED_RETRIEVAL_MODES = {"bm25", "vector", "hybrid"}
 DEFAULT_RETRIEVAL_MODE = os.getenv("RETRIEVAL_MODE", "hybrid").lower()
 if DEFAULT_RETRIEVAL_MODE not in _ALLOWED_RETRIEVAL_MODES:
-    DEFAULT_RETRIEVAL_MODE = "hybrid"
+    DEFAULT_RETRIEVAL_MODE = "vector"
 DEFAULT_RETRIEVAL_TOP_K = _env_int("RETRIEVAL_TOP_K", 2)
 DEFAULT_HYBRID_ALPHA = _env_float("RETRIEVAL_ALPHA", 0.5)
 DEFAULT_RERANK_DEPTH = _env_int("RERANK_DEPTH", 25)
