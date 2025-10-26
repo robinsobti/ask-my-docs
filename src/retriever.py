@@ -1,6 +1,6 @@
 """
 Retrieval utilities supporting BM25, vector, and hybrid querying against the
-Weaviate collection defined in this project.
+configured vector store backing this project.
 """
 from __future__ import annotations
 
@@ -14,8 +14,9 @@ from .config import (
     DEFAULT_HYBRID_ALPHA,
     DEFAULT_RETRIEVAL_MODE,
     DEFAULT_RETRIEVAL_TOP_K,
+    VECTOR_STORE_PROVIDER,
 )
-from .weaviate_store import create_collection_if_missing, search_bm25, search_vector
+from .vector_store import create_collection_if_missing, search_bm25, search_vector
 
 # if TYPE_CHECKING:  # pragma: no cover - import for typing only
 #     from .embedder import Embedder
@@ -64,6 +65,8 @@ def retrieve(
     create_collection_if_missing(name=collection)
 
     if mode_normalized == "bm25":
+        if VECTOR_STORE_PROVIDER != "weaviate":
+            raise NotImplementedError("BM25 mode is only available with the Weaviate provider.")
         return search_bm25(query=query, k=k, collection_name=collection)
 
     embed = _require_embedder(embedder, mode_normalized)
@@ -73,6 +76,9 @@ def retrieve(
         return search_vector(query_vector, k=k, collection_name=collection)
 
     # Hybrid: fuse BM25 + vector scores.
+    if VECTOR_STORE_PROVIDER != "weaviate":
+        raise NotImplementedError("Hybrid retrieval requires BM25 support; switch to Weaviate or use vector mode.")
+
     bm25_hits = search_bm25(query=query, k=k, collection_name=collection)
     vector_hits = search_vector(query_vector, k=k, collection_name=collection)
     fused = fuse_hybrid(bm25_hits, vector_hits, alpha=alpha)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CLI for querying the local Weaviate collection using BM25, vector, or hybrid retrieval.
+CLI for querying the configured vector store using BM25, vector, or hybrid retrieval.
 
 Usage:
     python scripts/search.py --q "reset my password" --mode hybrid --alpha 0.5 --k 5
@@ -23,15 +23,20 @@ from src.config import (  # noqa: E402
     DEFAULT_HYBRID_ALPHA,
     DEFAULT_RETRIEVAL_MODE,
     DEFAULT_RETRIEVAL_TOP_K,
+    VECTOR_STORE_PROVIDER,
 )  # noqa: E402
 from src.embedder import Embedder  # noqa: E402
 from src.retriever import Mode, retrieve  # noqa: E402
-from src.weaviate_store import close_client  # noqa: E402
+from src.vector_store import close_client  # noqa: E402
 
 
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Search the Weaviate collection.")
-    parser.add_argument("--q", required=True, help="Query text.")
+    parser = argparse.ArgumentParser(description="Search the configured vector store.")
+    parser.add_argument(
+        "--q",
+        default="reset my password",
+        help="Query text (default: 'reset my password').",
+    )
     parser.add_argument(
         "--mode",
         choices=["bm25", "vector", "hybrid"],
@@ -58,13 +63,17 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--collection",
         default=COLLECTION_NAME,
-        help=f"Weaviate collection name (default: {COLLECTION_NAME}).",
+        help=f"Vector store collection/index name (default: {COLLECTION_NAME}).",
     )
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = _parse_args(argv)
+
+    if VECTOR_STORE_PROVIDER == "pinecone" and args.mode in {"bm25", "hybrid"}:
+        print("Provider 'pinecone' supports vector search only; falling back to --mode vector.")
+        args.mode = "vector"
 
     embedder: Optional[Embedder] = None
     if args.mode in ("vector", "hybrid"):
