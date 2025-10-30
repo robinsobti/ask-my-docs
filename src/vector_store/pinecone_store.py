@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Tuple
 
-from .config import (
+from src.config import (
     DEFAULT_EMBED_DIM,
     DEFAULT_UPSERT_BATCH_SIZE,
     PINECONE_API_KEY,

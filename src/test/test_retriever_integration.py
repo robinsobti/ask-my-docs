@@ -9,7 +9,7 @@ try:
     from src.config import COLLECTION_NAME
     from src.embedder import Embedder
     from src.retriever import retrieve
-    from src.weaviate_store import create_collection_if_missing, upsert_batch
+    from src.vector_store.weaviate_store import create_collection_if_missing, upsert_batch
 except ModuleNotFoundError as exc:  # pragma: no cover - environment specific
     _DEPENDENCIES_AVAILABLE = False
     _DEPENDENCY_ERROR = exc

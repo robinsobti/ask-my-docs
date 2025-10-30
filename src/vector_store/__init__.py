@@ -14,9 +14,9 @@ if VECTOR_STORE_PROVIDER not in _SUPPORTED_PROVIDERS:
     raise ValueError(f"Unsupported vector store provider '{VECTOR_STORE_PROVIDER}'.")
 
 if VECTOR_STORE_PROVIDER == "pinecone":
-    from src import pinecone_store as _backend
+    from . import pinecone_store as _backend
 else:
-    from src import weaviate_store as _backend
+    from . import weaviate_store as _backend
 
 
 create_collection_if_missing = _backend.create_collection_if_missing

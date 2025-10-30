@@ -11,7 +11,7 @@ from weaviate.collections import collection
 from weaviate.classes.query import MetadataQuery
 from weaviate.exceptions import UnexpectedStatusCodeError, WeaviateBaseError
 
-from .config import (
+from src.config import (
     COLLECTION_NAME,
     DEFAULT_UPSERT_BATCH_SIZE,
     DOCS_SCHEMA,
@@ -21,7 +21,7 @@ from .config import (
 if TYPE_CHECKING:  # pragma: no cover - type checking only
     from numpy.typing import NDArray
 
-    from .chunking import Chunk
+    from src.chunking import Chunk
 
 
 _CLIENT: Optional[weaviate.WeaviateClient] = None
