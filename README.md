@@ -24,3 +24,8 @@ Search:
 
 
 You should see a table of results with BM25 scores.
+
+Visualize:
+
+python3 scripts/viz.py --source local --sample-size 200
+Saves embedding visualization under dir: artifacts/embeddings.png
