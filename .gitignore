@@ -4,6 +4,12 @@
 # weaviate
 weaviate_data/
 
+# reports
+artifacts/
+docs/
+runs/
+runs/latest/
+
 # Python
 __pycache__/
 *.pyc
