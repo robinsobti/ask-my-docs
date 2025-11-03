@@ -8,3 +8,4 @@ openai>=2.6.0
 pinecone==5.0.0
 numpy>=2.3
 pandas>=2.3
+cohere>=5.5.0
