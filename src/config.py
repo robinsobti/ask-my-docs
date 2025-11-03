@@ -36,6 +36,18 @@ def _env_float_optional(name: str) -> Optional[float]:
         raise ValueError(f"Environment variable {name} must be a float. Got {value!r}.") from exc
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "f", "no", "n", "off"}:
+        return False
+    raise ValueError(f"Environment variable {name} must be a boolean (got {value!r}).")
+
+
 _ALLOWED_VECTOR_STORE_PROVIDERS = {"weaviate", "pinecone"}
 VECTOR_STORE_PROVIDER = (os.getenv("VECTOR_STORE_PROVIDER", "weaviate") or "weaviate").strip().lower()
 if VECTOR_STORE_PROVIDER not in _ALLOWED_VECTOR_STORE_PROVIDERS:
@@ -70,6 +82,11 @@ if DEFAULT_RETRIEVAL_MODE not in _ALLOWED_RETRIEVAL_MODES:
 DEFAULT_RETRIEVAL_TOP_K = _env_int("RETRIEVAL_TOP_K", 2)
 DEFAULT_HYBRID_ALPHA = _env_float("RETRIEVAL_ALPHA", 0.5)
 DEFAULT_RERANK_DEPTH = _env_int("RERANK_DEPTH", 25)
+ENABLE_RERANK = _env_bool("ENABLE_RERANK", True)
+RERANK_BACKEND = (os.getenv("RERANK_BACKEND", "hf") or "hf").strip().lower()
+RERANK_MODEL = os.getenv("RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2") or "cross-encoder/ms-marco-MiniLM-L-6-v2"
+RERANK_BATCH_SIZE = _env_int("RERANK_BATCH_SIZE", 8)
+RERANK_TIMEOUT_S = _env_float("RERANK_TIMEOUT_S", 15.0)
 
 # OPEN AI API defaults
 OPENAI_MAX_TOKENS = _env_int("OPENAI_MAX_TOKENS", 512)

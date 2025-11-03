@@ -19,6 +19,9 @@ from src.config import (  # noqa: E402
     DEFAULT_RERANK_DEPTH,
     DEFAULT_RETRIEVAL_MODE,
     DEFAULT_RETRIEVAL_TOP_K,
+    ENABLE_RERANK,
+    RERANK_BACKEND,
+    RERANK_MODEL,
     PRICE_COMPLETION_PER_1K,
     PRICE_PROMPT_PER_1K
 )
@@ -59,6 +62,7 @@ default_mode_idx = mode_options.index(default_mode)
 default_top_k = min(max(DEFAULT_RETRIEVAL_TOP_K, 1), 20)
 default_alpha = min(max(float(DEFAULT_HYBRID_ALPHA), 0.0), 1.0)
 default_rerank_depth = min(max(DEFAULT_RERANK_DEPTH, 10), 100)
+default_rerank_enabled = bool(ENABLE_RERANK)
 
 if st.session_state["run_id"] is None and obs is not None:
     try:
@@ -83,7 +87,8 @@ with st.sidebar:
     if retrieval_mode != "hybrid":
         st.caption("Alpha ignored unless hybrid.")
     rerank_depth = st.slider("rerank_depth", min_value=10, max_value=100, value=default_rerank_depth, step=5)
-    st.caption("Takes effect when rerank is enabled (coming in v3)")
+    enable_rerank = st.checkbox("Enable rerank", value=default_rerank_enabled)
+    st.caption(f"Backend: {RERANK_BACKEND or 'none'} | Model: {RERANK_MODEL}")
     generator_model = st.text_input("Generator model", value=DEFAULT_GENERATOR_MODEL)
     show_sources = st.slider("Show sources", min_value=1, max_value=5, value=3, step=1)
     if st.session_state["run_id"]:
@@ -99,6 +104,7 @@ settings = {
     "top_k": top_k,
     "alpha": hybrid_alpha,
     "rerank_depth": rerank_depth,
+    "enable_rerank": enable_rerank,
     "generator_model": generator_model,
     "show_sources": show_sources,
 }

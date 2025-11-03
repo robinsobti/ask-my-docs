@@ -1,0 +1,20 @@
+{"question": "How long do I have to return an item?", "answers": ["returns::returns#0"], "notes": "Returns policy states 30-day window in returns.txt."}
+{"question": "What condition must returns be in to qualify for a refund?", "answers": ["returns::returns#0"], "notes": "Must be unused and in original packaging."}
+{"question": "How quickly will refunds be issued after inspection?", "answers": ["returns::returns#0"], "notes": "Refunds issued within 5 business days."}
+{"question": "How do I request an exchange before mailing back an item?", "answers": ["returns::returns#0"], "notes": "Need to contact support to reserve replacement inventory."}
+{"question": "Which products are ineligible for return?", "answers": ["returns::returns#0"], "notes": "Clearance, gift cards, personalized items excluded."}
+{"question": "What shipping options are available?", "answers": ["shipping::shipping#0"], "notes": "Standard and express listed in shipping.txt."}
+{"question": "When do orders placed after 2 p.m. ship?", "answers": ["shipping::shipping#0"], "notes": "Ship the following business day."}
+{"question": "What orders qualify for free shipping?", "answers": ["shipping::shipping#0"], "notes": "Domestic orders over $75 qualify."}
+{"question": "Can express shipments go to P.O. boxes?", "answers": ["shipping::shipping#0"], "notes": "Express cannot deliver to P.O. boxes."}
+{"question": "How long is the standard warranty coverage?", "answers": ["warranty::warranty#0"], "notes": "Warranty covers one year from purchase."}
+{"question": "How do I start a warranty claim?", "answers": ["warranty::warranty#0"], "notes": "Provide proof of purchase and photos to support@example.com."}
+{"question": "How fast does the warranty team respond?", "answers": ["warranty::warranty#0"], "notes": "Response within 2 business days."}
+{"question": "What actions void the warranty?", "answers": ["warranty::warranty#0"], "notes": "Normal wear, accidental damage, modifications void coverage."}
+{"question": "How do I reset my password?", "answers": ["faq::faq#0"], "notes": "FAQ instructs to visit reset URL and note expiration."}
+{"question": "Do you ship internationally?", "answers": ["faq::faq#0"], "notes": "FAQ confirms international shipping with customs fees."}
+{"question": "Can I change my order after it ships?", "answers": ["faq::faq#0"], "notes": "FAQ states orders cannot be rerouted after shipping."}
+{"question": "Do you offer gift wrapping for orders?", "answers": [], "notes": "Documentation does not mention gift wrapping."}
+{"question": "Where can I find your loyalty program tiers?", "answers": [], "notes": "No loyalty program information in sample docs."}
+{"question": "How do I request in-store pickup?", "answers": [], "notes": "Docs cover shipping only; no pickup guidance."}
+{"question": "Can I schedule a technician visit for installation?", "answers": [], "notes": "Warranty and support docs do not mention technicians."}

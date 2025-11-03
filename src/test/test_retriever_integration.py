@@ -2,6 +2,8 @@ import time
 import unittest
 import uuid
 
+from typing import Any, Dict, List
+
 _DEPENDENCIES_AVAILABLE = True
 _DEPENDENCY_ERROR = None
 
@@ -70,5 +72,35 @@ class RetrieverIntegrationTestCase(unittest.TestCase):
         self.assertIn(unique_keyword, inserted_hit["text"])
 
 
-if __name__ == "__main__":
-    unittest.main()
+class EvaluatorHarnessTestCase(unittest.TestCase):
+    """
+    Placeholder tests for the evaluation harness.
+
+    TODO: Implement the tests below once src/evals.py and scripts/eval.py are complete.
+    """
+
+    def _fake_hits(self) -> List[Dict[str, Any]]:
+        """Helper returning deterministic fake hits for testing."""
+        return [
+            {"id": "doc::chunk#0", "score": 1.0, "title": "doc", "text": "relevant", "source": "test"},
+            {"id": "doc::chunk#1", "score": 0.5, "title": "doc", "text": "maybe", "source": "test"},
+        ]
+
+    def test_evaluate_retrieval_with_mock(self) -> None:
+        """
+        TODO:
+        - Import evaluate_retrieval from src.evals.
+        - Construct a tiny goldset with one positive and one no-answer query.
+        - Monkeypatch a run_fn to return the deterministic hits above.
+        - Assert the returned metrics contain expected keys (hit@k, mrr).
+        """
+        self.skipTest("Implement evaluate_retrieval unit test once scaffolding is ready.")
+
+    def test_compare_runs_multiple_configs(self) -> None:
+        """
+        TODO:
+        - Import compare_runs from src.evals.
+        - Provide two fake run functions (baseline + variant) returning different hits.
+        - Confirm compare_runs returns both run names and metrics dicts.
+        """
+        self.skipTest("Implement compare_runs unit test with mocked run functions.")

@@ -11,3 +11,4 @@ tiktoken>=0.7
 pinecone>=5.0.0
 numpy>=1.26
 pandas>=2.2
+cohere>=5.5.0
