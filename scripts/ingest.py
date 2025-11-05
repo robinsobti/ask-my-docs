@@ -25,10 +25,26 @@ from src.chunking import load_files, split_into_chunks  # noqa: E402
 from src.config import COLLECTION_NAME, DOCS_SCHEMA  # noqa: E402
 from src.embedder import Embedder  # noqa: E402
 from src.vector_store import close_client, create_collection_if_missing, upsert_batch  # noqa: E402
+from src.dental.metadata_adapter import normalize_document_metadata  # noqa: E402
 
 
 def _iter_docs(paths: Iterable[str]) -> Iterable[dict]:
-    return load_files(list(paths))
+    for raw_doc in load_files(list(paths)):
+        doc = dict(raw_doc)
+
+        metadata_payload = doc.pop("metadata", None) or doc.get("dental_metadata")
+        if metadata_payload:
+            try:
+                normalized_metadata = normalize_document_metadata(metadata_payload)
+            except Exception as exc:  # pragma: no cover - defensive fallback
+                raise ValueError(f"Failed to normalize dental metadata for doc: {metadata_payload}") from exc
+
+            doc["metadata"] = normalized_metadata
+            doc["doc_id"] = normalized_metadata.get("doc_id", doc.get("doc_id", ""))
+            doc["title"] = normalized_metadata.get("title", doc.get("title", ""))
+            doc["source"] = normalized_metadata.get("source_url", doc.get("source", ""))
+
+        yield doc
 
 
 def _build_objects(chunks: List[dict], vectors: np.ndarray) -> List[dict]:

@@ -1,0 +1,63 @@
+schema_name: dental_document
+namespace: dental
+version: 1
+fields:
+  - name: doc_id
+    type: string
+    required: true
+    description: Stable identifier for the source document (use normalized URL or hash).
+  - name: title
+    type: string
+    required: true
+    description: Human-readable title from the page <title>, H1, or PDF metadata.
+  - name: source_url
+    type: url
+    required: true
+    description: Canonical URL where the content was fetched.
+  - name: publisher
+    type: string
+    required: true
+    default: National Institute of Dental and Craniofacial Research
+    description: Organization credited as the content publisher.
+  - name: license
+    type: string
+    required: true
+    default: Public domain (US federal government)
+    description: Usage rights statement; override if page specifies a different license.
+  - name: content_type
+    type: enum
+    required: true
+    allowed_values:
+      - html_article
+      - pdf_report
+      - pdf_section
+    description: Distinguishes how the document was sourced and should be chunked.
+  - name: retrieved_at
+    type: datetime
+    required: true
+    description: UTC timestamp when the resource was downloaded.
+  - name: language
+    type: string
+    required: true
+    default: en
+    description: ISO-639-1 language code detected for the document text.
+  - name: category_path
+    type: list[string]
+    required: false
+    description: Ordered breadcrumb trail (e.g., ["Health Info", "Gum Disease"]).
+  - name: section_heading
+    type: string
+    required: false
+    description: Heading text for the current section or PDF bookmark.
+  - name: page_number
+    type: integer
+    required: false
+    description: One-based page number for PDF-derived segments.
+  - name: ingestion_notes
+    type: list[string]
+    required: false
+    description: Free-form flags (e.g., ["has_tables", "contains_figures"]).
+  - name: checksum
+    type: string
+    required: false
+    description: Hex digest of raw payload for dedupe guard.
