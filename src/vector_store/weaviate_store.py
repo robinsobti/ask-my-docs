@@ -179,6 +179,7 @@ def upsert_batch(
             "stable_id": stable_id,
             "text": str(obj["text"] or ""),
             "title": str(obj.get("title") or ""),
+            "book_name": str(obj.get("book_name") or obj.get("title") or ""),
             "source": str(obj.get("source") or ""),
             "doc_id": str(obj.get("doc_id") or ""),
             "chunk_id": str(obj.get("chunk_id") or ""),
@@ -233,6 +234,7 @@ def _format_objects(objects: Sequence[Any]) -> List[Dict[str, Any]]:
                 "score": float(score) if score is not None else 0.0,
                 "title": properties.get("title", ""),
                 "text": properties.get("text", ""),
+                "book_name": properties.get("book_name", ""),
                 "source": properties.get("source", ""),
             }
         )

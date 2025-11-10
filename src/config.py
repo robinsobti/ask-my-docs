@@ -110,6 +110,7 @@ DOCS_SCHEMA = {
         {"name": "stable_id", "dataType": "text", "description": "Legacy chunk identifier (doc_id::chunk_id)"},
         {"name": "text", "dataType": "text", "description": "Chunk text"},
         {"name": "title", "dataType": "text", "description": "Document title"},
+        {"name": "book_name", "dataType": "text", "description": "Name of the PDF/book the chunk came from"},
         {"name": "source", "dataType": "text", "description": "Source path/URL"},
         {"name": "doc_id", "dataType": "text", "description": "Stable document id"},
         {"name": "chunk_id", "dataType": "text", "description": "Stable chunk id"},

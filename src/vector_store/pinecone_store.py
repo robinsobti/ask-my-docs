@@ -134,7 +134,7 @@ def upsert_batch(
             )
 
         metadata: Dict[str, Any] = {}
-        for key in ("text", "title", "source", "doc_id", "chunk_id", "ord"):
+        for key in ("text", "title", "book_name", "source", "doc_id", "chunk_id", "ord"):
             if key in obj and obj[key] is not None:
                 metadata[key] = obj[key]
         payload.append({"id": str(obj["id"]), "values": vector, "metadata": metadata})
@@ -193,6 +193,7 @@ def search_vector(
                 "id": getattr(match, "id", None) or match.get("id") or "",
                 "score": float(score) if score is not None else 0.0,
                 "title": metadata.get("title", ""),
+                "book_name": metadata.get("book_name", ""),
                 "text": metadata.get("text", ""),
                 "source": metadata.get("source", ""),
             }
