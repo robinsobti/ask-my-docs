@@ -26,7 +26,7 @@ from src.config import (  # noqa: E402
     PRICE_PROMPT_PER_1K
 )
 
-st.set_page_config(page_title="Ask-My-Docs", layout="wide")
+st.set_page_config(page_title="Ask My Docs", layout="wide")
 
 try:
     import src.retriever as retriever  # noqa: F401
@@ -52,17 +52,44 @@ if "run_id" not in st.session_state:
     st.session_state["run_id"] = None
     st.session_state["log_path"] = None
 
-st.title("Ask-My-Docs")
+st.title("Ask My Docs")
 st.caption("RAG with hybrid retrieval and sources.")
 
-mode_options = ["hybrid", "vector", "bm25"]
-default_mode = DEFAULT_RETRIEVAL_MODE if DEFAULT_RETRIEVAL_MODE in mode_options else "hybrid"
-default_mode_idx = mode_options.index(default_mode)
+TAB_CONFIG: Dict[str, Dict[str, Any]] = {
+    "Dental": {
+        "collection": "dental",
+        "samples": [
+            "How does dental enamel protect the tooth crown from wear?",
+            "What are the major components of the tooth pulp?",
+            "Describe the stages of tooth eruption.",
+            "How is dentin different from enamel in composition?",
+            "What factors influence occlusal stability?",
+            "Explain the role of periodontal ligament fibers.",
+        ],
+    },
+    "E-Commerce": {
+        "collection": "ask-my-docs",
+        "samples": [
+            "What's the return window for damaged products?",
+            "How do I track my shipment update?",
+            "What warranty coverage do electronics have?",
+            "Can I get a refund for late deliveries?",
+            "How do I initiate an exchange request?",
+            "What shipping options are available for international orders?",
+        ],
+    },
+}
+
+mode_options = ["vector"]
+default_mode_idx = 0
 
 default_top_k = min(max(DEFAULT_RETRIEVAL_TOP_K, 1), 20)
 default_alpha = min(max(float(DEFAULT_HYBRID_ALPHA), 0.0), 1.0)
 default_rerank_depth = min(max(DEFAULT_RERANK_DEPTH, 10), 100)
 default_rerank_enabled = bool(ENABLE_RERANK)
+
+if "active_collection" not in st.session_state:
+    st.session_state["active_collection"] = TAB_CONFIG["Dental"]["collection"]
 
 if st.session_state["run_id"] is None and obs is not None:
     try:
@@ -75,17 +102,10 @@ if st.session_state["run_id"] is None and obs is not None:
 
 with st.sidebar:
     st.header("Settings")
-    retrieval_mode = st.selectbox("Mode", options=mode_options, index=default_mode_idx)
+    st.markdown("**Database:** Pinecone")
+    retrieval_mode = st.selectbox("Mode", options=mode_options, index=default_mode_idx, disabled=True)
     top_k = st.slider("k (top docs)", min_value=1, max_value=20, value=default_top_k, step=1)
-    hybrid_alpha = st.slider(
-        "alpha (hybrid weight)",
-        min_value=0.0,
-        max_value=1.0,
-        value=default_alpha,
-        step=0.05,
-    )
-    if retrieval_mode != "hybrid":
-        st.caption("Alpha ignored unless hybrid.")
+    hybrid_alpha = default_alpha
     rerank_depth = st.slider("rerank_depth", min_value=10, max_value=100, value=default_rerank_depth, step=5)
     enable_rerank = st.checkbox("Enable rerank", value=default_rerank_enabled)
     st.caption(f"Backend: {RERANK_BACKEND or 'none'} | Model: {RERANK_MODEL}")
@@ -107,6 +127,7 @@ settings = {
     "enable_rerank": enable_rerank,
     "generator_model": generator_model,
     "show_sources": show_sources,
+    "collection": st.session_state.get("active_collection"),
 }
 
 st.session_state["settings"] = settings
@@ -143,6 +164,22 @@ def question_text_changed() -> None:
     _sync_query_params_from_question()
 
 
+tabs = st.tabs(list(TAB_CONFIG.keys()))
+for tab_idx, tab_name in enumerate(TAB_CONFIG.keys()):
+    tab_config = TAB_CONFIG[tab_name]
+    with tabs[tab_idx]:
+        st.markdown(f"**{tab_name} dataset** → `{tab_config['collection']}` index")
+        st.caption("Sample queries")
+        cols = st.columns(2)
+        for idx, sample in enumerate(tab_config["samples"]):
+            col = cols[idx % len(cols)]
+            with col:
+                if st.button(sample, key=f"sample-{tab_name}-{idx}"):
+                    st.session_state["question"] = sample
+                    st.session_state["active_collection"] = tab_config["collection"]
+                    _sync_query_params_from_question()
+                    st.rerun()
+
 question = st.text_input(
     "Ask a question about your documents",
     value=st.session_state.get("question", ""),
@@ -151,6 +188,9 @@ question = st.text_input(
 )
 
 _sync_query_params_from_question()
+
+active_collection = st.session_state.get("active_collection", TAB_CONFIG["Dental"]["collection"])
+st.caption(f"Active index: `{active_collection}` (Pinecone)")
 
 ask_disabled = not question.strip()
 
@@ -171,6 +211,7 @@ def ask_button_action() -> None:
         st.warning("Question cannot be blank.")
         return
     
+    current_collection = st.session_state.get("active_collection", TAB_CONFIG["Dental"]["collection"])
     params = {
         "mode": retrieval_mode,
         "k": top_k,
@@ -178,6 +219,7 @@ def ask_button_action() -> None:
         "generator_model": generator_model,
         "embed_model": DEFAULT_EMBEDDER_MODEL,
         "rerank_depth": rerank_depth,
+        "collection": current_collection,
     }
     ctx: Dict[str, Any] = new_ctx(st.session_state["run_id"], question_text, params)
 
@@ -197,6 +239,7 @@ def ask_button_action() -> None:
                 mode=retrieval_mode,
                 k=top_k,
                 alpha=hybrid_alpha,
+                collection=current_collection,
                 embedder=embedder_instance,
             )
         ctx["top_docs"] = results[:show_sources]
@@ -326,6 +369,12 @@ def render_results():
     message = st.session_state.get("last_message")
     ctx = st.session_state.get("last_ctx", {})
     st.subheader("Answer")
+    answered_collection = (
+        (ctx.get("params") or {}).get("collection")
+        if ctx
+        else None
+    ) or st.session_state.get("active_collection", "unknown")
+    st.caption(f"Answering from: {answered_collection}")
     if answer and answer.strip():
         st.write(answer.strip())
     else:

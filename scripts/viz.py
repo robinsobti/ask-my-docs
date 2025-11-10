@@ -106,7 +106,7 @@ def _fetch_from_weaviate(sample_size: int, seed: int) -> Tuple[np.ndarray, List[
 
 
 def _fetch_local(sample_size: int, seed: int) -> Tuple[np.ndarray, List[str]]:
-    data_dir = PROJECT_ROOT / "data" / "sample_docs"
+    data_dir = PROJECT_ROOT / "data" / "dental_corpus"
     embedder = Embedder(model_name=DEFAULT_EMBEDDER_MODEL)
 
     chunks: List[Tuple[str, str]] = []
