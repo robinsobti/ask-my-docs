@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-CLI for querying the configured vector store using BM25, vector, or hybrid retrieval.
+CLI for querying the configured vector store (vector mode by default).
 
 Usage:
-    python scripts/search.py --q "reset my password" --mode hybrid --alpha 0.5 --k 5
+    python scripts/search.py --q "reset my password" --collection dental --mode vector --k 5
 """
 from __future__ import annotations
 
